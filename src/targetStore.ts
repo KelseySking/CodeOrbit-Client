@@ -46,6 +46,10 @@ export function startLocalRuntime(): Promise<LocalRuntimeStartResult> {
   return invoke("start_local_runtime");
 }
 
+export function stopLocalRuntime(): Promise<LocalRuntimeStartResult> {
+  return invoke("stop_local_runtime");
+}
+
 export function normalizeBaseUrl(value: string): string {
   return value.trim().replace(/\/+$/, "");
 }

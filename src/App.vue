@@ -25,6 +25,7 @@ import {
   normalizeBaseUrl,
   saveRuntimeTarget,
   startLocalRuntime,
+  stopLocalRuntime,
   type RuntimeTarget,
 } from "./targetStore";
 
@@ -47,6 +48,7 @@ const translations = {
     websocket: "WebSocket",
     refresh: "刷新",
     startLocalRuntime: "启动本地 Runtime",
+    stopLocalRuntime: "关闭本地 Runtime",
     targets: "目标",
     new: "新建",
     noSavedTargets: "暂无已保存目标。",
@@ -103,6 +105,7 @@ const translations = {
     noPendingActions: "暂无待处理动作。",
     targetSaved: "目标已保存。Token 已存入系统凭据。",
     localRuntimeStarted: "本地 Runtime 已启动，目标已保存。",
+    localRuntimeStopped: "本地 Runtime 已关闭。",
     snapshotsRefreshed: "状态快照已刷新。",
     operationCompleted: "操作已完成：",
     deniedReason: "从 CodeOrbit Client 拒绝",
@@ -132,6 +135,7 @@ const translations = {
     websocket: "WebSocket",
     refresh: "Refresh",
     startLocalRuntime: "Start local Runtime",
+    stopLocalRuntime: "Stop local Runtime",
     targets: "Targets",
     new: "New",
     noSavedTargets: "No saved targets.",
@@ -188,6 +192,7 @@ const translations = {
     noPendingActions: "No pending actions.",
     targetSaved: "Target saved. Token is stored in OS credentials.",
     localRuntimeStarted: "Local Runtime started. Target saved.",
+    localRuntimeStopped: "Local Runtime stopped.",
     snapshotsRefreshed: "State snapshots refreshed.",
     operationCompleted: "Operation completed on ",
     deniedReason: "Denied from CodeOrbit Client",
@@ -220,6 +225,7 @@ const wsState = ref<WsState>("idle");
 const loading = ref(false);
 const savingTarget = ref(false);
 const startingRuntime = ref(false);
+const stoppingRuntime = ref(false);
 const operationMessage = ref("");
 const errorMessage = ref("");
 const activeRequestId = ref(0);
@@ -359,6 +365,23 @@ async function startLocalRuntimeTarget() {
     errorMessage.value = String(error);
   } finally {
     startingRuntime.value = false;
+  }
+}
+
+async function stopLocalRuntimeTarget() {
+  stoppingRuntime.value = true;
+  errorMessage.value = "";
+  operationMessage.value = "";
+  try {
+    const result = await stopLocalRuntime();
+    if (activeTarget.value?.baseUrl === DEFAULT_BASE_URL && result.success) {
+      disconnect();
+    }
+    operationMessage.value = result.message || copy.value.localRuntimeStopped;
+  } catch (error) {
+    errorMessage.value = String(error);
+  } finally {
+    stoppingRuntime.value = false;
   }
 }
 
@@ -725,6 +748,9 @@ function trimText(value: string | null | undefined, max = 120): string {
         </div>
         <button type="button" :disabled="startingRuntime" @click="startLocalRuntimeTarget">
           {{ copy.startLocalRuntime }}
+        </button>
+        <button type="button" class="danger" :disabled="stoppingRuntime" @click="stopLocalRuntimeTarget">
+          {{ copy.stopLocalRuntime }}
         </button>
         <button type="button" :disabled="!activeTarget || loading" @click="manualRefresh">{{ copy.refresh }}</button>
       </div>

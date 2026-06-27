@@ -1,3 +1,5 @@
+import { invoke } from "@tauri-apps/api/core";
+
 export interface RuntimeTargetConnection {
   id: string;
   name: string;
@@ -179,6 +181,11 @@ export interface HubEventDto {
   data?: unknown;
 }
 
+interface RuntimeHttpResponse {
+  status: number;
+  body: string;
+}
+
 export class RuntimeApiError extends Error {
   constructor(
     message: string,
@@ -190,20 +197,36 @@ export class RuntimeApiError extends Error {
 
 export function createRuntimeClient(target: RuntimeTargetConnection) {
   async function getJson<T>(path: string, auth = true): Promise<T> {
-    const response = await fetch(`${target.baseUrl}/api/${path}`, {
-      headers: auth ? authHeaders(target.token) : undefined,
-    });
-    return readResponse<T>(response, path);
+    return requestJson<T>(path, { auth });
   }
 
   async function postJson<T>(path: string, body?: unknown): Promise<T> {
-    const response = await fetch(`${target.baseUrl}/api/${path}`, {
-      method: "POST",
-      headers: {
-        ...authHeaders(target.token),
-        ...(body === undefined ? {} : { "content-type": "application/json" }),
+    return requestJson<T>(path, { method: "POST", body });
+  }
+
+  async function requestJson<T>(
+    path: string,
+    options: { method?: "GET" | "POST"; body?: unknown; auth?: boolean } = {},
+  ): Promise<T> {
+    if (target.baseUrl.startsWith("https://")) {
+      const response = await fetch(`${target.baseUrl}/api/${path}`, {
+        method: options.method ?? "GET",
+        headers: {
+          ...(options.auth === false ? {} : authHeaders(target.token)),
+          ...(options.body === undefined ? {} : { "content-type": "application/json" }),
+        },
+        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      });
+      return readFetchResponse<T>(response, path);
+    }
+
+    const response = await invoke<RuntimeHttpResponse>("runtime_request", {
+      request: {
+        method: options.method ?? "GET",
+        url: `${target.baseUrl}/api/${path}`,
+        token: options.auth === false ? null : target.token,
+        body: options.body === undefined ? null : options.body,
       },
-      body: body === undefined ? undefined : JSON.stringify(body),
     });
     return readResponse<T>(response, path);
   }
@@ -279,6 +302,7 @@ export function currentQuestion(action: PendingActionDto): QuestionItemDto | Que
 export function formatRuntimeError(error: unknown): string {
   if (error instanceof RuntimeApiError) return error.message;
   if (error instanceof Error) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
   return "Runtime request failed.";
 }
 
@@ -299,18 +323,28 @@ export function eventRefreshScope(event: HubEventDto): "sessions" | "pending" | 
   }
 }
 
-async function readResponse<T>(response: Response, path: string): Promise<T> {
-  if (!response.ok) {
+function readResponse<T>(response: RuntimeHttpResponse, path: string): T {
+  if (response.status < 200 || response.status >= 300) {
     const fallback = `Runtime /api/${path} failed with ${response.status}.`;
-    throw new RuntimeApiError(await readErrorMessage(response, fallback), response.status);
+    throw new RuntimeApiError(readErrorMessage(response.body, fallback), response.status);
   }
 
-  return (await response.json()) as T;
+  return JSON.parse(response.body) as T;
 }
 
-async function readErrorMessage(response: Response, fallback: string): Promise<string> {
+async function readFetchResponse<T>(response: Response, path: string): Promise<T> {
+  const body = await response.text();
+  if (!response.ok) {
+    const fallback = `Runtime /api/${path} failed with ${response.status}.`;
+    throw new RuntimeApiError(readErrorMessage(body, fallback), response.status);
+  }
+
+  return JSON.parse(body) as T;
+}
+
+function readErrorMessage(responseBody: string, fallback: string): string {
   try {
-    const body = (await response.json()) as { message?: unknown; code?: unknown };
+    const body = JSON.parse(responseBody) as { message?: unknown; code?: unknown };
     if (typeof body.message === "string" && body.message.trim()) {
       return body.message;
     }
