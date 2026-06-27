@@ -2,13 +2,18 @@ use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
+    net::TcpStream,
     path::PathBuf,
+    process::{Command, Stdio},
     time::{SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Manager};
 
 const TARGETS_FILE: &str = "runtime-targets.json";
 const KEYRING_SERVICE: &str = "CodeOrbit Client Runtime Target";
+const LOCAL_RUNTIME_REPO: &str = r"D:\OtherWork\CodeOrbit-Rust";
+const LOCAL_RUNTIME_TOKEN: &str = "dev-token";
+const LOCAL_RUNTIME_PORT: u16 = 32145;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -33,6 +38,13 @@ struct SaveRuntimeTargetRequest {
     name: String,
     base_url: String,
     token: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalRuntimeStartResult {
+    success: bool,
+    message: String,
 }
 
 #[tauri::command]
@@ -113,6 +125,58 @@ fn get_runtime_target_token(id: String) -> Result<String, String> {
         .map_err(|err| format!("Could not load target token from OS credential storage: {err}"))
 }
 
+#[tauri::command]
+fn start_local_runtime() -> Result<LocalRuntimeStartResult, String> {
+    let repo = PathBuf::from(LOCAL_RUNTIME_REPO);
+    if !repo.join("Cargo.toml").exists() {
+        return Err(format!(
+            "CodeOrbit Rust repo was not found at {LOCAL_RUNTIME_REPO}."
+        ));
+    }
+
+    if TcpStream::connect(("127.0.0.1", LOCAL_RUNTIME_PORT)).is_ok() {
+        return Ok(LocalRuntimeStartResult {
+            success: true,
+            message: format!("Port {LOCAL_RUNTIME_PORT} already has a listener. Use the saved local target to connect."),
+        });
+    }
+
+    let port = LOCAL_RUNTIME_PORT.to_string();
+    let mut command = Command::new("cargo");
+    command
+        .current_dir(repo)
+        .args([
+            "run",
+            "-p",
+            "codeorbit-host",
+            "--",
+            "--token",
+            LOCAL_RUNTIME_TOKEN,
+            "--port",
+            port.as_str(),
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+
+    command
+        .spawn()
+        .map_err(|err| format!("Could not start local Runtime with cargo: {err}"))?;
+
+    Ok(LocalRuntimeStartResult {
+        success: true,
+        message: format!(
+            "Starting CodeOrbit Rust Runtime on http://127.0.0.1:{LOCAL_RUNTIME_PORT}."
+        ),
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -121,7 +185,8 @@ pub fn run() {
             list_runtime_targets,
             save_runtime_target,
             delete_runtime_target,
-            get_runtime_target_token
+            get_runtime_target_token,
+            start_local_runtime
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

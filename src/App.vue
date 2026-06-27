@@ -9,8 +9,10 @@ import {
   type ApiCapabilitiesDto,
   type ApiHealthDto,
   type ApiVersionDto,
+  type ChatMessageDto,
   type HubEventDto,
   type PendingActionDto,
+  type PendingResolutionDto,
   type RuntimeAssetsDto,
   type RuntimeTargetConnection,
   type SessionDto,
@@ -22,6 +24,7 @@ import {
   listRuntimeTargets,
   normalizeBaseUrl,
   saveRuntimeTarget,
+  startLocalRuntime,
   type RuntimeTarget,
 } from "./targetStore";
 
@@ -30,6 +33,8 @@ type WsState = "idle" | "connecting" | "connected" | "disconnected" | "disabled"
 type Language = "zh" | "en";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:32145";
+const LOCAL_RUNTIME_TARGET_NAME = "CodeOrbit Rust Dev Runtime";
+const LOCAL_RUNTIME_TOKEN = "dev-token";
 
 const translations = {
   zh: {
@@ -41,6 +46,7 @@ const translations = {
     noActiveTarget: "未连接目标",
     websocket: "WebSocket",
     refresh: "刷新",
+    startLocalRuntime: "启动本地 Runtime",
     targets: "目标",
     new: "新建",
     noSavedTargets: "暂无已保存目标。",
@@ -74,9 +80,19 @@ const translations = {
     missingOrUnknown: "缺失或未知",
     noAssetSnapshot: "暂无核心资产快照。",
     sessions: "会话",
+    loadMessages: "消息",
+    activateTerminal: "激活终端",
+    dismissSession: "移除会话",
+    user: "用户",
+    assistant: "助手",
+    noMessages: "暂无消息。",
     noSummary: "暂无摘要。",
     noSessions: "暂无会话。",
     pendingActions: "待处理动作",
+    pendingHistory: "处理历史",
+    noPendingHistory: "暂无处理历史。",
+    actor: "处理者",
+    reason: "原因",
     allow: "允许",
     allowAlways: "总是允许",
     deny: "拒绝",
@@ -86,6 +102,7 @@ const translations = {
     dismiss: "关闭",
     noPendingActions: "暂无待处理动作。",
     targetSaved: "目标已保存。Token 已存入系统凭据。",
+    localRuntimeStarted: "本地 Runtime 已启动，目标已保存。",
     snapshotsRefreshed: "状态快照已刷新。",
     operationCompleted: "操作已完成：",
     deniedReason: "从 CodeOrbit Client 拒绝",
@@ -114,6 +131,7 @@ const translations = {
     noActiveTarget: "No active target",
     websocket: "WebSocket",
     refresh: "Refresh",
+    startLocalRuntime: "Start local Runtime",
     targets: "Targets",
     new: "New",
     noSavedTargets: "No saved targets.",
@@ -147,9 +165,19 @@ const translations = {
     missingOrUnknown: "Missing or unknown",
     noAssetSnapshot: "No runtime asset snapshot loaded.",
     sessions: "Sessions",
+    loadMessages: "Messages",
+    activateTerminal: "Activate terminal",
+    dismissSession: "Dismiss session",
+    user: "User",
+    assistant: "Assistant",
+    noMessages: "No messages.",
     noSummary: "No summary yet.",
     noSessions: "No sessions.",
     pendingActions: "Pending Actions",
+    pendingHistory: "History",
+    noPendingHistory: "No pending history.",
+    actor: "Actor",
+    reason: "Reason",
     allow: "Allow",
     allowAlways: "Allow always",
     deny: "Deny",
@@ -159,6 +187,7 @@ const translations = {
     dismiss: "Dismiss",
     noPendingActions: "No pending actions.",
     targetSaved: "Target saved. Token is stored in OS credentials.",
+    localRuntimeStarted: "Local Runtime started. Target saved.",
     snapshotsRefreshed: "State snapshots refreshed.",
     operationCompleted: "Operation completed on ",
     deniedReason: "Denied from CodeOrbit Client",
@@ -190,6 +219,7 @@ const connectionState = ref<ConnectionState>("idle");
 const wsState = ref<WsState>("idle");
 const loading = ref(false);
 const savingTarget = ref(false);
+const startingRuntime = ref(false);
 const operationMessage = ref("");
 const errorMessage = ref("");
 const activeRequestId = ref(0);
@@ -210,6 +240,8 @@ const sources = ref<SourceDto[]>([]);
 const runtimeAssets = ref<RuntimeAssetsDto | null>(null);
 const sessions = ref<SessionDto[]>([]);
 const pending = ref<PendingActionDto[]>([]);
+const pendingHistory = ref<PendingResolutionDto[]>([]);
+const sessionMessages = reactive<Record<string, ChatMessageDto[]>>({});
 
 const client = computed(() => {
   if (!activeTarget.value || !activeToken.value) return null;
@@ -232,6 +264,8 @@ const sortedSessions = computed(() =>
 const sortedPending = computed(() =>
   [...pending.value].sort((a, b) => a.createdAtUtc.localeCompare(b.createdAtUtc)),
 );
+
+const recentPendingHistory = computed(() => pendingHistory.value.slice(0, 20));
 
 onMounted(async () => {
   await loadTargets();
@@ -299,6 +333,32 @@ async function removeTarget(target: RuntimeTarget) {
     if (form.id === target.id) newTarget();
   } catch (error) {
     errorMessage.value = String(error);
+  }
+}
+
+async function startLocalRuntimeTarget() {
+  startingRuntime.value = true;
+  errorMessage.value = "";
+  operationMessage.value = "";
+  try {
+    const result = await startLocalRuntime();
+    const existing = targets.value.find(
+      (target) =>
+        normalizeBaseUrl(target.baseUrl) === DEFAULT_BASE_URL || target.name === LOCAL_RUNTIME_TARGET_NAME,
+    );
+    const target = await saveRuntimeTarget({
+      id: existing?.id,
+      name: LOCAL_RUNTIME_TARGET_NAME,
+      baseUrl: DEFAULT_BASE_URL,
+      token: LOCAL_RUNTIME_TOKEN,
+    });
+    await loadTargets();
+    editTarget(target);
+    operationMessage.value = `${copy.value.localRuntimeStarted} ${result.message}`;
+  } catch (error) {
+    errorMessage.value = String(error);
+  } finally {
+    startingRuntime.value = false;
   }
 }
 
@@ -385,7 +445,7 @@ async function refreshAll(requestId = activeRequestId.value) {
     refreshSources(requestId),
     refreshAssets(requestId),
     refreshSessions(requestId),
-    refreshPending(requestId),
+    refreshPendingState(requestId),
   ]);
 }
 
@@ -415,6 +475,22 @@ async function refreshPending(requestId = activeRequestId.value) {
   if (!api) return;
   const next = await api.getPending();
   if (isCurrent(requestId)) pending.value = next;
+}
+
+async function refreshPendingState(requestId = activeRequestId.value) {
+  await refreshPending(requestId);
+  await refreshPendingHistory(requestId);
+}
+
+async function refreshPendingHistory(requestId = activeRequestId.value) {
+  const api = client.value;
+  if (!api) return;
+  try {
+    const next = await api.getPendingHistory(20);
+    if (isCurrent(requestId)) pendingHistory.value = next.entries;
+  } catch {
+    if (isCurrent(requestId)) pendingHistory.value = [];
+  }
 }
 
 async function manualRefresh() {
@@ -469,14 +545,40 @@ function repairAssets() {
   if (api) void runOperation(api.repairRuntimeAssets, refreshAssets);
 }
 
+async function loadSessionMessages(session: SessionDto) {
+  const api = client.value;
+  if (!api) return;
+  const requestId = activeRequestId.value;
+  loading.value = true;
+  errorMessage.value = "";
+  try {
+    const next = await api.getSessionMessages(session.sessionId);
+    if (isCurrent(requestId)) sessionMessages[session.sessionId] = next;
+  } catch (error) {
+    if (isCurrent(requestId)) errorMessage.value = formatRuntimeError(error);
+  } finally {
+    if (isCurrent(requestId)) loading.value = false;
+  }
+}
+
+function activateSessionTerminal(session: SessionDto) {
+  const api = client.value;
+  if (api) void runOperation(() => api.activateTerminal(session.sessionId), refreshSessions);
+}
+
+function dismissRuntimeSession(session: SessionDto) {
+  const api = client.value;
+  if (api) void runOperation(() => api.dismissSession(session.sessionId), refreshAll);
+}
+
 function allow(action: PendingActionDto, always: boolean) {
   const api = client.value;
-  if (api) void runOperation(() => api.allowPermission(action.actionId, always), refreshPending);
+  if (api) void runOperation(() => api.allowPermission(action.actionId, always), refreshPendingState);
 }
 
 function deny(action: PendingActionDto) {
   const api = client.value;
-  if (api) void runOperation(() => api.denyPermission(action.actionId, copy.value.deniedReason), refreshPending);
+  if (api) void runOperation(() => api.denyPermission(action.actionId, copy.value.deniedReason), refreshPendingState);
 }
 
 function answer(action: PendingActionDto) {
@@ -494,12 +596,12 @@ function answer(action: PendingActionDto) {
     if (result.resolved) {
       delete questionAnswers[action.actionId];
     }
-  }, refreshPending);
+  }, refreshPendingState);
 }
 
 function dismissQuestion(action: PendingActionDto) {
   const api = client.value;
-  if (api) void runOperation(() => api.dismissQuestion(action.actionId), refreshPending);
+  if (api) void runOperation(() => api.dismissQuestion(action.actionId), refreshPendingState);
 }
 
 function resetTargetState(target: RuntimeTarget): number {
@@ -521,7 +623,9 @@ function resetSnapshots() {
   runtimeAssets.value = null;
   sessions.value = [];
   pending.value = [];
+  pendingHistory.value = [];
   Object.keys(questionAnswers).forEach((key) => delete questionAnswers[key]);
+  Object.keys(sessionMessages).forEach((key) => delete sessionMessages[key]);
 }
 
 function openSocket(requestId: number, target: RuntimeTargetConnection) {
@@ -561,7 +665,7 @@ function handleEventMessage(message: string, requestId: number) {
     const scope = eventRefreshScope(event);
     const refresh = {
       sessions: refreshSessions,
-      pending: refreshPending,
+      pending: refreshPendingState,
       sources: refreshSources,
       assets: refreshAssets,
       all: refreshAll,
@@ -619,6 +723,9 @@ function trimText(value: string | null | undefined, max = 120): string {
             {{ copy.en }}
           </button>
         </div>
+        <button type="button" :disabled="startingRuntime" @click="startLocalRuntimeTarget">
+          {{ copy.startLocalRuntime }}
+        </button>
         <button type="button" :disabled="!activeTarget || loading" @click="manualRefresh">{{ copy.refresh }}</button>
       </div>
     </header>
@@ -781,6 +888,28 @@ function trimText(value: string | null | undefined, max = 120): string {
               </div>
               <span class="pill">{{ session.status }}</span>
               <p>{{ trimText(summarizeSession(session)) || copy.noSummary }}</p>
+              <div class="button-row">
+                <button type="button" :disabled="loading" @click="loadSessionMessages(session)">
+                  {{ copy.loadMessages }}
+                </button>
+                <button type="button" :disabled="loading" @click="activateSessionTerminal(session)">
+                  {{ copy.activateTerminal }}
+                </button>
+                <button type="button" class="danger" :disabled="loading" @click="dismissRuntimeSession(session)">
+                  {{ copy.dismissSession }}
+                </button>
+              </div>
+              <div v-if="sessionMessages[session.sessionId]" class="chat-list">
+                <p v-if="sessionMessages[session.sessionId].length === 0" class="empty">{{ copy.noMessages }}</p>
+                <p
+                  v-for="(message, index) in sessionMessages[session.sessionId]"
+                  :key="`${message.timestampUtc}-${index}`"
+                  class="chat-message"
+                >
+                  <strong>{{ message.isUser ? copy.user : copy.assistant }}</strong>
+                  <span>{{ trimText(message.text, 220) }}</span>
+                </p>
+              </div>
             </article>
             <p v-if="sortedSessions.length === 0" class="empty">{{ copy.noSessions }}</p>
           </div>
@@ -840,6 +969,26 @@ function trimText(value: string | null | undefined, max = 120): string {
               </template>
             </article>
             <p v-if="sortedPending.length === 0" class="empty">{{ copy.noPendingActions }}</p>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>{{ copy.pendingHistory }}</h2>
+              <small>{{ activeLabel }}</small>
+            </div>
+          </div>
+          <div class="table-list">
+            <article v-for="entry in recentPendingHistory" :key="`${entry.actionId}-${entry.resolvedAtUtc}`" class="history-card">
+              <div>
+                <strong>{{ entry.kind }} · {{ entry.decision }}</strong>
+                <small>{{ entry.source || entry.sessionId || entry.actionId }}</small>
+              </div>
+              <span class="pill">{{ entry.actor || copy.actor }}</span>
+              <p>{{ entry.reason ? `${copy.reason}: ${entry.reason}` : entry.resolvedAtUtc }}</p>
+            </article>
+            <p v-if="recentPendingHistory.length === 0" class="empty">{{ copy.noPendingHistory }}</p>
           </div>
         </section>
       </section>
@@ -1134,7 +1283,8 @@ small {
 
 .row-card,
 .session-card,
-.pending-card {
+.pending-card,
+.history-card {
   border: 1px solid #e1e7e3;
   border-radius: 8px;
   background: #fbfcfb;
@@ -1149,7 +1299,8 @@ small {
 }
 
 .session-card,
-.pending-card {
+.pending-card,
+.history-card {
   display: grid;
   gap: 0.5rem;
 }
@@ -1168,8 +1319,22 @@ small {
 
 .assets-grid p,
 .session-card p,
-.pending-card p {
+.pending-card p,
+.history-card p,
+.chat-message {
   overflow-wrap: anywhere;
+}
+
+.chat-list {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.chat-message {
+  display: grid;
+  gap: 0.15rem;
+  border-left: 3px solid #d8e0db;
+  padding-left: 0.55rem;
 }
 
 .options {

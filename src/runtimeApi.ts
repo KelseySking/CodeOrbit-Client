@@ -49,6 +49,13 @@ export interface SourceDto {
   sourceType: string;
 }
 
+export interface SourceStatusDto {
+  source: string;
+  supported: boolean;
+  installed: boolean;
+  displayName: string;
+}
+
 export interface SourceOperationResultDto {
   source: string;
   success: boolean;
@@ -146,6 +153,21 @@ export interface PendingActionDto {
   question?: QuestionDto | null;
 }
 
+export interface PendingResolutionDto {
+  actionId: string;
+  kind: string;
+  sessionId?: string | null;
+  source?: string | null;
+  decision: string;
+  actor?: string | null;
+  reason?: string | null;
+  resolvedAtUtc: string;
+}
+
+export interface PendingHistoryDto {
+  entries: PendingResolutionDto[];
+}
+
 export interface QuestionCurrentAnswerResultDto {
   success: boolean;
   resolved: boolean;
@@ -191,16 +213,30 @@ export function createRuntimeClient(target: RuntimeTargetConnection) {
     getVersion: () => getJson<ApiVersionDto>("version"),
     getCapabilities: () => getJson<ApiCapabilitiesDto>("capabilities"),
     getSources: () => getJson<SourceDto[]>("sources"),
+    getSourceStatus: (source: string) =>
+      getJson<SourceStatusDto>(`sources/${encodeURIComponent(source)}/status`),
     getRuntimeAssets: () => getJson<RuntimeAssetsDto>("runtime-assets"),
     getSessions: () => getJson<SessionDto[]>("sessions"),
+    getSession: (sessionId: string) =>
+      getJson<SessionDto>(`sessions/${encodeURIComponent(sessionId)}`),
+    getSessionMessages: (sessionId: string) =>
+      getJson<ChatMessageDto[]>(`sessions/${encodeURIComponent(sessionId)}/messages`),
+    dismissSession: (sessionId: string) =>
+      postJson<{ success: boolean }>(`sessions/${encodeURIComponent(sessionId)}/dismiss`),
+    activateTerminal: (sessionId: string) =>
+      postJson<{ success: boolean }>(`sessions/${encodeURIComponent(sessionId)}/activate-terminal`),
     getPending: () => getJson<PendingActionDto[]>("pending"),
+    getPendingAction: (actionId: string) =>
+      getJson<PendingActionDto>(`pending/${encodeURIComponent(actionId)}`),
+    getPendingHistory: (limit = 20) =>
+      getJson<PendingHistoryDto>(`pending/history?limit=${encodeURIComponent(String(limit))}`),
     installSource: (source: string) =>
       postJson<SourceOperationResultDto>(`sources/${encodeURIComponent(source)}/install`),
     repairSource: (source: string) =>
       postJson<SourceOperationResultDto>(`sources/${encodeURIComponent(source)}/repair`),
     uninstallSource: (source: string) =>
       postJson<SourceOperationResultDto>(`sources/${encodeURIComponent(source)}/uninstall`),
-    repairAllSources: () => postJson<SourceOperationResultDto[]>("sources/repair-all"),
+    repairAllSources: () => postJson<{ success: boolean }>("sources/repair-all"),
     repairRuntimeAssets: () =>
       postJson<{ success: boolean; assets: RuntimeAssetsDto }>("runtime-assets/repair"),
     allowPermission: (actionId: string, always: boolean) =>

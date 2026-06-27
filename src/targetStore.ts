@@ -15,6 +15,11 @@ export interface SaveRuntimeTargetInput {
   token?: string;
 }
 
+export interface LocalRuntimeStartResult {
+  success: boolean;
+  message: string;
+}
+
 export function listRuntimeTargets(): Promise<RuntimeTarget[]> {
   return invoke("list_runtime_targets");
 }
@@ -35,6 +40,10 @@ export function deleteRuntimeTarget(id: string): Promise<void> {
 
 export function getRuntimeTargetToken(id: string): Promise<string> {
   return invoke("get_runtime_target_token", { id });
+}
+
+export function startLocalRuntime(): Promise<LocalRuntimeStartResult> {
+  return invoke("start_local_runtime");
 }
 
 export function normalizeBaseUrl(value: string): string {
