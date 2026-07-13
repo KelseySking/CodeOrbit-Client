@@ -274,17 +274,17 @@ export function createRuntimeClient(target: RuntimeTargetConnection) {
     allowPermission: (actionId: string, always: boolean) =>
       postJson<{ success: boolean }>(`permissions/${encodeURIComponent(actionId)}/allow`, {
         always,
-        actor: "CodeOrbit Client",
+        actor: "CodeOrbit Companion",
       }),
     denyPermission: (actionId: string, reason: string) =>
       postJson<{ success: boolean }>(`permissions/${encodeURIComponent(actionId)}/deny`, {
         reason,
-        actor: "CodeOrbit Client",
+        actor: "CodeOrbit Companion",
       }),
     answerQuestion: (actionId: string, answers: string[]) =>
       postJson<QuestionCurrentAnswerResultDto>(
         `questions/${encodeURIComponent(actionId)}/answer-current`,
-        { answers, actor: "CodeOrbit Client" },
+        { answers, actor: "CodeOrbit Companion" },
       ),
     dismissQuestion: (actionId: string) =>
       postJson<{ success: boolean }>(`questions/${encodeURIComponent(actionId)}/dismiss`),

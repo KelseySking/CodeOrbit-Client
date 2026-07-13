@@ -15,11 +15,14 @@ const {
   connectionState,
   health,
   version,
+  pending,
   pendingCount,
   errorMessage,
   loading,
   isConnected,
+  client,
   loadTargets,
+  loadPending,
   saveAndConnect,
   connectExisting,
   removeTarget,
@@ -149,6 +152,54 @@ function onDisconnect() {
   disconnect();
   showToast("已断开连接");
 }
+
+async function withPendingAction(
+  okMsg: string,
+  fn: (api: NonNullable<typeof client.value>) => Promise<void>,
+) {
+  const api = client.value;
+  if (!api) {
+    showToast("尚未连接");
+    return;
+  }
+  try {
+    await fn(api);
+    await loadPending(api);
+    showToast(okMsg);
+  } catch (error) {
+    showToast(formatRuntimeError(error));
+    try {
+      await loadPending(api);
+    } catch {
+      // still bump list identity so PendingView can clear busyId
+      pending.value = pending.value.slice();
+    }
+  }
+}
+
+function onAllow(actionId: string, always: boolean) {
+  void withPendingAction(always ? "已设为总是允许" : "已允许", (api) =>
+    api.allowPermission(actionId, always).then(() => undefined),
+  );
+}
+
+function onDeny(actionId: string, reason: string) {
+  void withPendingAction("已拒绝", (api) =>
+    api.denyPermission(actionId, reason).then(() => undefined),
+  );
+}
+
+function onAnswer(actionId: string, answers: string[]) {
+  void withPendingAction("已回答", async (api) => {
+    await api.answerQuestion(actionId, answers);
+  });
+}
+
+function onDismiss(actionId: string) {
+  void withPendingAction("已关闭问题", (api) =>
+    api.dismissQuestion(actionId).then(() => undefined),
+  );
+}
 </script>
 
 <template>
@@ -172,9 +223,15 @@ function onDisconnect() {
         <PendingView
           v-if="activeTab === 'pending'"
           :connection-state="connectionState"
+          :pending="pending"
+          :loading="loading"
           @go-connect="goConnect"
           @toast="showToast"
           @retry="onRefresh"
+          @allow="onAllow"
+          @deny="onDeny"
+          @answer="onAnswer"
+          @dismiss="onDismiss"
         />
         <SessionsView
           v-else-if="activeTab === 'sessions'"

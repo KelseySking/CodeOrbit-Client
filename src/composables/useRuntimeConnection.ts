@@ -6,6 +6,7 @@ import {
   type ApiCapabilitiesDto,
   type ApiHealthDto,
   type ApiVersionDto,
+  type PendingActionDto,
 } from "../runtimeApi";
 import type { ConnectionState } from "../shell/StatusChip.vue";
 import {
@@ -32,7 +33,8 @@ export function useRuntimeConnection() {
   const health = ref<ApiHealthDto | null>(null);
   const version = ref<ApiVersionDto | null>(null);
   const capabilities = ref<ApiCapabilitiesDto | null>(null);
-  const pendingCount = ref(0);
+  const pending = ref<PendingActionDto[]>([]);
+  const pendingCount = computed(() => pending.value.length);
   const errorMessage = ref("");
   const loading = ref(false);
 
@@ -75,7 +77,7 @@ export function useRuntimeConnection() {
     health.value = null;
     version.value = null;
     capabilities.value = null;
-    pendingCount.value = 0;
+    pending.value = [];
   }
 
   function disconnect() {
@@ -88,15 +90,28 @@ export function useRuntimeConnection() {
     clearSnapshots();
   }
 
+  async function loadPending(api?: ReturnType<typeof createRuntimeClient> | null) {
+    const clientApi = api ?? client.value;
+    if (!clientApi) {
+      pending.value = [];
+      return;
+    }
+    try {
+      pending.value = await clientApi.getPending();
+    } catch (error) {
+      // keep previous list on soft refresh failure unless forced empty
+      throw error;
+    }
+  }
+
   async function probe(api: ReturnType<typeof createRuntimeClient>) {
     health.value = await api.getHealth();
     version.value = await api.getVersion();
     capabilities.value = await api.getCapabilities();
     try {
-      const pending = await api.getPending();
-      pendingCount.value = pending.length;
+      await loadPending(api);
     } catch {
-      pendingCount.value = 0;
+      pending.value = [];
     }
   }
 
@@ -216,12 +231,14 @@ export function useRuntimeConnection() {
     health,
     version,
     capabilities,
+    pending,
     pendingCount,
     errorMessage,
     loading,
     isConnected,
     client,
     loadTargets,
+    loadPending,
     saveAndConnect,
     connectExisting,
     removeTarget,
