@@ -17,12 +17,14 @@ const {
   version,
   pending,
   pendingCount,
+  sessions,
   errorMessage,
   loading,
   isConnected,
   client,
   loadTargets,
   loadPending,
+  loadSessions,
   saveAndConnect,
   connectExisting,
   removeTarget,
@@ -200,6 +202,24 @@ function onDismiss(actionId: string) {
     api.dismissQuestion(actionId).then(() => undefined),
   );
 }
+
+async function onDismissSession(sessionId: string) {
+  const api = client.value;
+  if (!api) {
+    showToast("尚未连接");
+    return;
+  }
+  try {
+    await api.dismissSession(sessionId);
+    await loadSessions(api);
+    if (stack.value?.type === "session" && stack.value.id === sessionId) {
+      stack.value = null;
+    }
+    showToast("已移除会话");
+  } catch (error) {
+    showToast(formatRuntimeError(error));
+  }
+}
 </script>
 
 <template>
@@ -218,6 +238,7 @@ function onDismiss(actionId: string) {
         v-if="stack?.type === 'session'"
         :session-id="stack.id"
         :title="stack.title"
+        :client="client"
       />
       <template v-else>
         <PendingView
@@ -236,8 +257,11 @@ function onDismiss(actionId: string) {
         <SessionsView
           v-else-if="activeTab === 'sessions'"
           :connected="isConnected"
+          :sessions="sessions"
+          :loading="loading"
           @go-connect="goConnect"
           @open-session="openSession"
+          @dismiss="onDismissSession"
         />
         <ConnectView
           v-else

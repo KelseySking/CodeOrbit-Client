@@ -1,83 +1,110 @@
 <script setup lang="ts">
-defineProps<{
+import { summarizeSession, type SessionDto } from "../runtimeApi";
+
+const props = defineProps<{
   connected: boolean;
+  sessions: SessionDto[];
+  loading: boolean;
 }>();
 
 const emit = defineEmits<{
   goConnect: [];
   openSession: [session: { id: string; title: string; subtitle: string }];
+  dismiss: [sessionId: string];
 }>();
 
-const sessions = [
-  {
-    id: "s1",
-    title: "CodeOrbit-Client",
-    sub: "Claude Code · 正在编辑 App.vue…",
-    time: "2 分钟前",
-    idle: false,
-  },
-  {
-    id: "s2",
-    title: "MyApp · auth-flow",
-    sub: "Claude Code · 等待权限：Write",
-    time: "8 分钟前",
-    idle: false,
-  },
-  {
-    id: "s3",
-    title: "docs-site",
-    sub: "Claude Code · 已完成 README 修订",
-    time: "1 小时前",
-    idle: true,
-  },
-  {
-    id: "s4",
-    title: "runtime-bridge",
-    sub: "Claude Code · 修复 Token 刷新竞态",
-    time: "昨天",
-    idle: true,
-  },
-];
+function titleOf(s: SessionDto): string {
+  return (
+    s.projectName?.trim() ||
+    s.workingDirectory?.trim()?.split(/[/\\]/).filter(Boolean).pop() ||
+    s.sessionId
+  );
+}
 
-function open(s: (typeof sessions)[number]) {
+function subOf(s: SessionDto): string {
+  const source = s.sourceDisplayName || s.source;
+  const summary = summarizeSession(s);
+  return summary ? `${source} · ${summary}` : source;
+}
+
+function isIdle(s: SessionDto): boolean {
+  const st = (s.status || "").toLowerCase();
+  return st.includes("idle") || st.includes("complete") || st.includes("done") || st.includes("end");
+}
+
+function relativeTime(iso: string): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  const sec = Math.round((Date.now() - t) / 1000);
+  if (sec < 60) return "刚刚";
+  if (sec < 3600) return `${Math.floor(sec / 60)} 分钟前`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)} 小时前`;
+  if (sec < 86400 * 2) return "昨天";
+  return new Date(t).toLocaleDateString();
+}
+
+function open(s: SessionDto) {
   emit("openSession", {
-    id: s.id,
-    title: s.title,
-    subtitle: s.idle ? "Claude Code · 已完成" : "Claude Code · 进行中",
+    id: s.sessionId,
+    title: titleOf(s),
+    subtitle: `${s.sourceDisplayName || s.source} · ${s.status || "会话"}`,
   });
+}
+
+function onDismiss(e: Event, id: string) {
+  e.stopPropagation();
+  if (confirm("从列表移除此会话？")) emit("dismiss", id);
 }
 </script>
 
 <template>
   <section class="pad stack" style="gap: 10px">
     <template v-if="connected">
+      <div v-if="loading && !sessions.length" class="meta" style="padding: 12px 4px">加载中…</div>
+
       <button
         v-for="s in sessions"
-        :key="s.id"
+        :key="s.sessionId"
         type="button"
         class="session-row"
         @click="open(s)"
       >
-        <span class="dot" :class="{ idle: s.idle }" aria-hidden="true" />
+        <span class="dot" :class="{ idle: isIdle(s) }" aria-hidden="true" />
         <div>
-          <div class="title">{{ s.title }}</div>
-          <div class="sub">{{ s.sub }}</div>
+          <div class="title">{{ titleOf(s) }}</div>
+          <div class="sub">{{ subOf(s) }}</div>
         </div>
         <div class="right">
-          <div class="num">{{ s.time }}</div>
+          <div class="num">{{ relativeTime(s.lastUpdatedAtUtc || s.createdAtUtc) }}</div>
+          <button
+            type="button"
+            class="btn-text"
+            style="min-height: 28px; font-size: 12px"
+            @click="onDismiss($event, s.sessionId)"
+          >
+            移除
+          </button>
           <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M9 6l6 6-6 6" />
           </svg>
         </div>
       </button>
+
+      <div v-if="!loading && !sessions.length" class="empty">
+        <div class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+        </div>
+        <h2 class="h2">暂无会话</h2>
+        <p>Agent 会话会出现在这里。</p>
+      </div>
     </template>
     <template v-else>
       <div class="empty">
         <div class="icon" aria-hidden="true">
           <svg viewBox="0 0 24 24">
-            <path
-              d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
-            />
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
           </svg>
         </div>
         <h2 class="h2">暂无会话</h2>

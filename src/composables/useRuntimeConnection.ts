@@ -7,6 +7,7 @@ import {
   type ApiHealthDto,
   type ApiVersionDto,
   type PendingActionDto,
+  type SessionDto,
 } from "../runtimeApi";
 import type { ConnectionState } from "../shell/StatusChip.vue";
 import {
@@ -35,6 +36,7 @@ export function useRuntimeConnection() {
   const capabilities = ref<ApiCapabilitiesDto | null>(null);
   const pending = ref<PendingActionDto[]>([]);
   const pendingCount = computed(() => pending.value.length);
+  const sessions = ref<SessionDto[]>([]);
   const errorMessage = ref("");
   const loading = ref(false);
 
@@ -78,6 +80,7 @@ export function useRuntimeConnection() {
     version.value = null;
     capabilities.value = null;
     pending.value = [];
+    sessions.value = [];
   }
 
   function disconnect() {
@@ -96,12 +99,16 @@ export function useRuntimeConnection() {
       pending.value = [];
       return;
     }
-    try {
-      pending.value = await clientApi.getPending();
-    } catch (error) {
-      // keep previous list on soft refresh failure unless forced empty
-      throw error;
+    pending.value = await clientApi.getPending();
+  }
+
+  async function loadSessions(api?: ReturnType<typeof createRuntimeClient> | null) {
+    const clientApi = api ?? client.value;
+    if (!clientApi) {
+      sessions.value = [];
+      return;
     }
+    sessions.value = await clientApi.getSessions();
   }
 
   async function probe(api: ReturnType<typeof createRuntimeClient>) {
@@ -112,6 +119,11 @@ export function useRuntimeConnection() {
       await loadPending(api);
     } catch {
       pending.value = [];
+    }
+    try {
+      await loadSessions(api);
+    } catch {
+      sessions.value = [];
     }
   }
 
@@ -233,12 +245,14 @@ export function useRuntimeConnection() {
     capabilities,
     pending,
     pendingCount,
+    sessions,
     errorMessage,
     loading,
     isConnected,
     client,
     loadTargets,
     loadPending,
+    loadSessions,
     saveAndConnect,
     connectExisting,
     removeTarget,
