@@ -20,6 +20,7 @@ const {
   sessions,
   errorMessage,
   loading,
+  wsState,
   isConnected,
   client,
   loadTargets,
@@ -61,6 +62,8 @@ const chromeTitle = computed(() => {
 
 const chromeSubtitle = computed(() => {
   if (stack.value?.type === "session") return stack.value.subtitle;
+  if (isConnected.value && wsState.value === "reconnecting") return "实时同步重连中…";
+  if (isConnected.value && wsState.value === "closed") return "实时同步暂不可用";
   return undefined;
 });
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { summarizeSession, type SessionDto } from "../runtimeApi";
 
-const props = defineProps<{
+defineProps<{
   connected: boolean;
   sessions: SessionDto[];
   loading: boolean;
@@ -62,12 +62,15 @@ function onDismiss(e: Event, id: string) {
     <template v-if="connected">
       <div v-if="loading && !sessions.length" class="meta" style="padding: 12px 4px">加载中…</div>
 
-      <button
+      <div
         v-for="s in sessions"
         :key="s.sessionId"
-        type="button"
         class="session-row"
+        role="button"
+        tabindex="0"
         @click="open(s)"
+        @keydown.enter.prevent="open(s)"
+        @keydown.space.prevent="open(s)"
       >
         <span class="dot" :class="{ idle: isIdle(s) }" aria-hidden="true" />
         <div>
@@ -88,7 +91,7 @@ function onDismiss(e: Event, id: string) {
             <path d="M9 6l6 6-6 6" />
           </svg>
         </div>
-      </button>
+      </div>
 
       <div v-if="!loading && !sessions.length" class="empty">
         <div class="icon" aria-hidden="true">

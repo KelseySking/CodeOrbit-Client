@@ -1,11 +1,13 @@
 import { computed, ref } from "vue";
 import {
   createRuntimeClient,
+  eventRefreshScope,
   formatRuntimeError,
   RuntimeApiError,
   type ApiCapabilitiesDto,
   type ApiHealthDto,
   type ApiVersionDto,
+  type HubEventDto,
   type PendingActionDto,
   type SessionDto,
 } from "../runtimeApi";
@@ -27,6 +29,8 @@ export type ConnectFormInput = {
   token: string;
 };
 
+export type WsState = "idle" | "open" | "closed" | "reconnecting";
+
 export function useRuntimeConnection() {
   const targets = ref<RuntimeTarget[]>([]);
   const activeTarget = ref<RuntimeTarget | null>(null);
@@ -39,9 +43,14 @@ export function useRuntimeConnection() {
   const sessions = ref<SessionDto[]>([]);
   const errorMessage = ref("");
   const loading = ref(false);
+  const wsState = ref<WsState>("idle");
 
   let activeToken = "";
   let requestId = 0;
+  let socket: WebSocket | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let wsGeneration = 0;
+  let intentionalClose = false;
 
   const isConnected = computed(() => connectionState.value === "connected");
 
@@ -83,7 +92,133 @@ export function useRuntimeConnection() {
     sessions.value = [];
   }
 
+  function stopEvents() {
+    intentionalClose = true;
+    wsGeneration += 1;
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    if (socket) {
+      try {
+        socket.close();
+      } catch {
+        // ignore
+      }
+      socket = null;
+    }
+    wsState.value = "idle";
+  }
+
+  async function applyEvent(event: HubEventDto) {
+    const api = client.value;
+    if (!api || connectionState.value !== "connected") return;
+    const scope = eventRefreshScope(event);
+    try {
+      if (scope === "pending") {
+        await loadPending(api);
+      } else if (scope === "sessions") {
+        await loadSessions(api);
+      } else {
+        // sources/assets/all → refresh companion data surface
+        await Promise.all([
+          loadPending(api).catch(() => undefined),
+          loadSessions(api).catch(() => undefined),
+        ]);
+      }
+    } catch {
+      // keep last good snapshot; manual refresh still works
+    }
+  }
+
+  function openEvents(
+    api: ReturnType<typeof createRuntimeClient>,
+    generation: number,
+    attempt: number,
+  ) {
+    if (generation !== wsGeneration) return;
+
+    let url: string;
+    try {
+      url = api.eventsUrl();
+    } catch {
+      wsState.value = "closed";
+      return;
+    }
+
+    wsState.value = attempt > 0 ? "reconnecting" : "closed";
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(url);
+    } catch {
+      scheduleReconnect(api, generation, attempt);
+      return;
+    }
+
+    socket = ws;
+    ws.onopen = () => {
+      if (generation !== wsGeneration) {
+        try {
+          ws.close();
+        } catch {
+          // ignore
+        }
+        return;
+      }
+      wsState.value = "open";
+      if (attempt > 0) {
+        void Promise.all([
+          loadPending(api).catch(() => undefined),
+          loadSessions(api).catch(() => undefined),
+        ]);
+      }
+    };
+    ws.onmessage = (ev) => {
+      if (generation !== wsGeneration) return;
+      try {
+        const event = JSON.parse(String(ev.data)) as HubEventDto;
+        if (event && typeof event.type === "string") void applyEvent(event);
+      } catch {
+        // ignore malformed frames
+      }
+    };
+    ws.onerror = () => {
+      // onclose handles reconnect
+    };
+    ws.onclose = () => {
+      if (generation !== wsGeneration) return;
+      socket = null;
+      if (intentionalClose) {
+        wsState.value = "idle";
+        return;
+      }
+      scheduleReconnect(api, generation, attempt);
+    };
+  }
+
+  function scheduleReconnect(
+    api: ReturnType<typeof createRuntimeClient>,
+    generation: number,
+    attempt: number,
+  ) {
+    if (generation !== wsGeneration || intentionalClose) return;
+    wsState.value = "reconnecting";
+    const delay = Math.min(30_000, 1000 * 2 ** Math.min(attempt, 5));
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      openEvents(api, generation, attempt + 1);
+    }, delay);
+  }
+
+  function startEvents(api: ReturnType<typeof createRuntimeClient>) {
+    stopEvents();
+    intentionalClose = false;
+    const generation = ++wsGeneration;
+    openEvents(api, generation, 0);
+  }
+
   function disconnect() {
+    stopEvents();
     requestId += 1;
     activeToken = "";
     activeTarget.value = null;
@@ -128,6 +263,7 @@ export function useRuntimeConnection() {
   }
 
   async function connectTarget(target: RuntimeTarget, tokenOverride?: string) {
+    stopEvents();
     const rid = ++requestId;
     connectionState.value = "connecting";
     loading.value = true;
@@ -154,8 +290,10 @@ export function useRuntimeConnection() {
       if (rid !== requestId) return;
 
       connectionState.value = "connected";
+      startEvents(api);
     } catch (error) {
       if (rid !== requestId) return;
+      stopEvents();
       activeToken = "";
       connectionState.value = classifyError(error);
       errorMessage.value = formatRuntimeError(error);
@@ -248,6 +386,7 @@ export function useRuntimeConnection() {
     sessions,
     errorMessage,
     loading,
+    wsState,
     isConnected,
     client,
     loadTargets,
