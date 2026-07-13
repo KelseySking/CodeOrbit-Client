@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from "vue";
 import { formatRuntimeError, type ChatMessageDto } from "../runtimeApi";
+import { renderMarkdown } from "../utils/markdown";
 
 type SessionClient = {
   getSessionMessages: (sessionId: string) => Promise<ChatMessageDto[]>;
@@ -110,7 +111,7 @@ watch(
         class="msg"
         :class="roleOf(m)"
       >
-        {{ m.text }}
+        <div class="msg-body md" v-html="renderMarkdown(m.text)" />
         <span class="time num">{{ timeOf(m.timestampUtc) }}</span>
       </div>
     </template>
