@@ -1,19 +1,40 @@
-# CodeOrbit Client
+# CodeOrbit Client / Companion
 
 [English](README.md)
 
-CodeOrbit Client 是
-[CodeOrbit](https://github.com/KelseySking/CodeOrbit) 的轻量桌面管理界面。它基于
-Tauri 构建，目标是为 CodeOrbit 提供一个简单、可视化、本地优先的桌面入口，用于管理和观察
-CodeOrbit Runtime。
+本仓库是 [CodeOrbit](https://github.com/KelseySking/CodeOrbit) 的 **Companion 展示端**（Tauri 2 + Vue 3）：
+连接电脑上已运行的 Runtime，在手机形态 UI 上处理**权限审批 / 问答**并查看**会话**。
+不在手机上运行 Runtime，也不替代桌面 HUD。
 
-CodeOrbit 主项目负责接入 CLI hook 事件，归一化会话、审批和问答状态，并通过带 token
-认证的 REST/WebSocket 接口把状态提供给多个展示端。本仓库就是面向桌面的一类展示/管理客户端。
+CodeOrbit 主项目负责 CLI hook、会话归一化与 token 认证的 REST/WebSocket；本客户端只消费公开合同。
 
-## 当前状态
+## 当前状态（MVP）
 
-当前仓库是一个初始化阶段的 Tauri + Vue 客户端外壳。后续会围绕 CodeOrbit 的公开接口逐步补齐可视化管理能力，
-UI 层不直接依赖 Runtime 内部实现。
+- 三 Tab：**待处理 · 会话 · 连接**
+- 手填 Runtime URL + Token（系统凭据存储；勿把 Runtime 裸暴露公网）
+- 权限：允许 / 总是允许 / 拒绝；问答：`answer-current` / 关闭
+- 会话列表与详情消息；可选移除会话
+- WebSocket `/api/events` 触发 REST 刷新；失败时顶栏手动刷新仍可用
+- 视觉：奶白主题（`design-source/` 对齐 Open Design）
+
+**主路径不含**：本地 Runtime 启停、Hook/Assets 修复、激活终端。
+
+### 已知限制
+
+| 项 | 说明 |
+|---|---|
+| Android 真机构建 | 需本机 `ANDROID_HOME` / SDK；当前以桌面 `tauri dev` + 窄屏布局验证 |
+| Token | 走 OS keyring；浏览器纯 `npm run dev` 时 keyring/invoke 受限，优先 `cargo tauri dev` |
+| 实时 | WS 断线指数退避重连；无独立轮询（可手动刷新） |
+| 联调前提 | 局域网可达 Runtime（默认示意 `http://<PC-IP>:32145`）+ 有效 Token |
+
+### 联调
+
+```powershell
+npm install
+cargo tauri dev
+# 连接页填写 Runtime 地址与 Token → 保存并连接
+```
 
 ## 技术栈
 
