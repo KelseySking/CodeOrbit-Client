@@ -39,7 +39,7 @@ defineEmits<{
     <div class="topbar-actions">
       <StatusChip :state="connectionState" />
       <button
-        v-if="showRefresh !== false && !showBack"
+        v-if="showRefresh !== false"
         type="button"
         class="icon-btn"
         aria-label="刷新"

@@ -41,6 +41,8 @@ export function useRuntimeConnection() {
   const pending = ref<PendingActionDto[]>([]);
   const pendingCount = computed(() => pending.value.length);
   const sessions = ref<SessionDto[]>([]);
+  /** bumps when session list/messages snapshot should re-fetch (WS / refresh) */
+  const sessionsEpoch = ref(0);
   const errorMessage = ref("");
   const loading = ref(false);
   const wsState = ref<WsState>("idle");
@@ -244,6 +246,7 @@ export function useRuntimeConnection() {
       return;
     }
     sessions.value = await clientApi.getSessions();
+    sessionsEpoch.value += 1;
   }
 
   async function probe(api: ReturnType<typeof createRuntimeClient>) {
@@ -384,6 +387,7 @@ export function useRuntimeConnection() {
     pending,
     pendingCount,
     sessions,
+    sessionsEpoch,
     errorMessage,
     loading,
     wsState,

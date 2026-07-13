@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from "vue";
+import { nextTick, onMounted, ref, watch } from "vue";
 import { formatRuntimeError, type ChatMessageDto } from "../runtimeApi";
 
 type SessionClient = {
@@ -11,29 +11,46 @@ const props = defineProps<{
   sessionId: string;
   title: string;
   client: SessionClient | null;
+  /** parent bumps on WS session refresh / manual probe */
+  reloadToken?: number;
 }>();
 
 const messages = ref<ChatMessageDto[]>([]);
 const loading = ref(false);
 const error = ref("");
+const stickBottom = ref(true);
+const streamEl = ref<HTMLElement | null>(null);
 
-async function load() {
+async function load(opts: { silent?: boolean } = {}) {
   if (!props.client || !props.sessionId) {
     messages.value = [];
     return;
   }
-  loading.value = true;
-  error.value = "";
+  const silent = opts.silent && messages.value.length > 0;
+  if (!silent) {
+    loading.value = true;
+    error.value = "";
+  }
   try {
+    let next: ChatMessageDto[];
     try {
-      messages.value = await props.client.getSessionMessages(props.sessionId);
+      next = await props.client.getSessionMessages(props.sessionId);
     } catch {
       const session = await props.client.getSession(props.sessionId);
-      messages.value = session.recentMessages ?? [];
+      next = session.recentMessages ?? [];
+    }
+    messages.value = next;
+    error.value = "";
+    if (stickBottom.value) {
+      await nextTick();
+      const el = streamEl.value;
+      if (el) el.scrollTop = el.scrollHeight;
     }
   } catch (e) {
-    error.value = formatRuntimeError(e);
-    messages.value = [];
+    if (!silent) {
+      error.value = formatRuntimeError(e);
+      messages.value = [];
+    }
   } finally {
     loading.value = false;
   }
@@ -49,21 +66,47 @@ function timeOf(iso: string): string {
   return new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-onMounted(load);
-watch(() => [props.sessionId, props.client] as const, load);
+function onScroll() {
+  const el = streamEl.value;
+  if (!el) return;
+  stickBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+}
+
+onMounted(() => {
+  void load();
+});
+
+watch(
+  () => props.sessionId,
+  () => {
+    stickBottom.value = true;
+    void load();
+  },
+);
+
+// WS / topbar refresh bumps sessionsEpoch → silent re-fetch messages
+watch(
+  () => props.reloadToken,
+  (token, prev) => {
+    if (token === undefined || token === prev) return;
+    void load({ silent: true });
+  },
+);
 </script>
 
 <template>
-  <section class="msg-stream">
-    <div v-if="loading" class="meta" style="padding: 12px 16px">加载消息…</div>
-    <div v-else-if="error" class="banner" style="margin: 12px 16px">
+  <section ref="streamEl" class="msg-stream" @scroll.passive="onScroll">
+    <div v-if="loading && !messages.length" class="meta" style="padding: 12px 16px">
+      加载消息…
+    </div>
+    <div v-else-if="error && !messages.length" class="banner" style="margin: 12px 16px">
       <span>{{ error }}</span>
-      <button type="button" @click="load">重试</button>
+      <button type="button" @click="load()">重试</button>
     </div>
     <template v-else-if="messages.length">
       <div
         v-for="(m, i) in messages"
-        :key="`${sessionId}-${i}-${m.timestampUtc}`"
+        :key="`${sessionId}-${i}-${m.timestampUtc}-${m.text.slice(0, 24)}`"
         class="msg"
         :class="roleOf(m)"
       >

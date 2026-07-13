@@ -18,6 +18,7 @@ const {
   pending,
   pendingCount,
   sessions,
+  sessionsEpoch,
   errorMessage,
   loading,
   wsState,
@@ -242,6 +243,7 @@ async function onDismissSession(sessionId: string) {
         :session-id="stack.id"
         :title="stack.title"
         :client="client"
+        :reload-token="sessionsEpoch"
       />
       <template v-else>
         <PendingView
