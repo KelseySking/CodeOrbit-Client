@@ -12,9 +12,9 @@
   "app": {
     "windows": [
       {
-        "title": "codeorbit-client",
-        "width": 800,
-        "height": 600
+        "title": "CodeOrbit Companion",
+        "width": 390,
+        "height": 844
       }
     ],
     "security": {

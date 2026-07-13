@@ -13,7 +13,8 @@ use tauri::{AppHandle, Manager};
 
 const TARGETS_FILE: &str = "runtime-targets.json";
 const KEYRING_SERVICE: &str = "CodeOrbit Client Runtime Target";
-const LOCAL_RUNTIME_REPO: &str = r"D:\OtherWork\CodeOrbit-Rust";
+const LOCAL_RUNTIME_DIR: &str = r"D:\OtherWork\CodeOrbit-Rust\release\CodeOrbit-Rust-v0.1.0-windows-x64";
+const LOCAL_RUNTIME_BIN: &str = "codeorbit-host.exe";
 const LOCAL_RUNTIME_TOKEN: &str = "dev-token";
 const LOCAL_RUNTIME_PORT: u16 = 32145;
 static LOCAL_RUNTIME_CHILD: OnceLock<Mutex<Option<Child>>> = OnceLock::new();
@@ -169,10 +170,12 @@ fn start_local_runtime() -> Result<LocalRuntimeStartResult, String> {
         }
     }
 
-    let repo = PathBuf::from(LOCAL_RUNTIME_REPO);
-    if !repo.join("Cargo.toml").exists() {
+    let dir = PathBuf::from(LOCAL_RUNTIME_DIR);
+    let bin = dir.join(LOCAL_RUNTIME_BIN);
+    if !bin.exists() {
         return Err(format!(
-            "CodeOrbit Rust repo was not found at {LOCAL_RUNTIME_REPO}."
+            "CodeOrbit Rust Runtime binary was not found at {}.",
+            bin.display()
         ));
     }
 
@@ -184,14 +187,10 @@ fn start_local_runtime() -> Result<LocalRuntimeStartResult, String> {
     }
 
     let port = LOCAL_RUNTIME_PORT.to_string();
-    let mut command = Command::new("cargo");
+    let mut command = Command::new(&bin);
     command
-        .current_dir(repo)
+        .current_dir(&dir)
         .args([
-            "run",
-            "-p",
-            "codeorbit-host",
-            "--",
             "--token",
             LOCAL_RUNTIME_TOKEN,
             "--port",
@@ -209,7 +208,7 @@ fn start_local_runtime() -> Result<LocalRuntimeStartResult, String> {
 
     let child = command
         .spawn()
-        .map_err(|err| format!("Could not start local Runtime with cargo: {err}"))?;
+        .map_err(|err| format!("Could not start local Runtime binary: {err}"))?;
     *child_slot = Some(child);
 
     Ok(LocalRuntimeStartResult {

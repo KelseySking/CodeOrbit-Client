@@ -208,26 +208,35 @@ export function createRuntimeClient(target: RuntimeTargetConnection) {
     path: string,
     options: { method?: "GET" | "POST"; body?: unknown; auth?: boolean } = {},
   ): Promise<T> {
+    const method = options.method ?? "GET";
+    const url = `${target.baseUrl}/api/${path}`;
+    const headers: Record<string, string> = {
+      ...(options.auth === false ? {} : { authorization: `Bearer ${target.token}` }),
+      ...(options.body === undefined ? {} : { "content-type": "application/json" }),
+    };
+    const body = options.body === undefined ? undefined : JSON.stringify(options.body);
+
+    // https always uses fetch; http prefers Tauri proxy, falls back to fetch for browser dev
     if (target.baseUrl.startsWith("https://")) {
-      const response = await fetch(`${target.baseUrl}/api/${path}`, {
-        method: options.method ?? "GET",
-        headers: {
-          ...(options.auth === false ? {} : authHeaders(target.token)),
-          ...(options.body === undefined ? {} : { "content-type": "application/json" }),
-        },
-        body: options.body === undefined ? undefined : JSON.stringify(options.body),
-      });
+      const response = await fetch(url, { method, headers, body });
       return readFetchResponse<T>(response, path);
     }
 
-    const response = await invoke<RuntimeHttpResponse>("runtime_request", {
-      request: {
-        method: options.method ?? "GET",
-        url: `${target.baseUrl}/api/${path}`,
-        token: options.auth === false ? null : target.token,
-        body: options.body === undefined ? null : options.body,
-      },
-    });
+    let response: RuntimeHttpResponse;
+    try {
+      response = await invoke<RuntimeHttpResponse>("runtime_request", {
+        request: {
+          method,
+          url,
+          token: options.auth === false ? null : target.token,
+          body: options.body === undefined ? null : options.body,
+        },
+      });
+    } catch {
+      // ponytail: browser `npm run dev` has no Tauri invoke — fall back to fetch for local http
+      const fetchResponse = await fetch(url, { method, headers, body });
+      return readFetchResponse<T>(fetchResponse, path);
+    }
     return readResponse<T>(response, path);
   }
 
@@ -356,10 +365,6 @@ function readErrorMessage(responseBody: string, fallback: string): string {
   }
 
   return fallback;
-}
-
-function authHeaders(token: string): HeadersInit {
-  return { authorization: `Bearer ${token}` };
 }
 
 function buildEventsUrl(target: RuntimeTargetConnection): string {
