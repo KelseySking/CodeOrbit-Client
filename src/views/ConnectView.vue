@@ -19,7 +19,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   saveConnect: [payload: { id?: string; name: string; baseUrl: string; token: string }];
   connectExisting: [id: string];
-  deleteTarget: [id: string];
+  deleteTarget: [payload: { id: string; name: string }];
   disconnect: [];
   goPending: [];
   toast: [message: string];
@@ -56,6 +56,16 @@ watch(
   () => props.activeTarget?.id,
   () => {
     if (props.activeTarget) applyTarget(props.activeTarget);
+  },
+);
+
+// 删除目标成功后列表会刷新；若当前表单仍指向已删 id，清空为新建态
+watch(
+  () => props.targets,
+  (list) => {
+    if (formId.value && !list.some((t) => t.id === formId.value)) {
+      applyTarget(null);
+    }
   },
 );
 
@@ -100,8 +110,11 @@ function newTarget() {
 
 function removeSelected() {
   if (!formId.value) return;
-  emit("deleteTarget", formId.value);
-  newTarget();
+  const targetName =
+    name.value.trim() ||
+    props.targets.find((t) => t.id === formId.value)?.name ||
+    "此目标";
+  emit("deleteTarget", { id: formId.value, name: targetName });
 }
 </script>
 
@@ -264,31 +277,59 @@ function removeSelected() {
           </div>
           <div class="field-error" role="alert">{{ errToken }}</div>
         </div>
-        <button
-          type="submit"
-          class="btn-primary"
-          :class="{ 'is-loading': loading || connectionState === 'connecting' }"
-          :disabled="loading || connectionState === 'connecting'"
-        >
-          {{
-            loading || connectionState === "connecting" ? "连接中…" : "保存并连接"
-          }}
-        </button>
-        <button
-          v-if="formId"
-          type="button"
-          class="btn-danger"
-          :disabled="loading"
-          @click="removeSelected"
-        >
-          删除此目标
-        </button>
+        <div class="form-actions">
+          <button
+            type="submit"
+            class="btn-primary"
+            :class="{ 'is-loading': loading || connectionState === 'connecting' }"
+            :disabled="loading || connectionState === 'connecting'"
+          >
+            {{
+              loading || connectionState === "connecting" ? "连接中…" : "保存并连接"
+            }}
+          </button>
+          <button
+            v-if="formId"
+            type="button"
+            class="icon-btn danger"
+            aria-label="删除目标"
+            :disabled="loading"
+            @click="removeSelected"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h16" />
+              <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+              <path d="M8 7l1 12a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1l1-12" />
+              <path d="M10 11v6M14 11v6" />
+            </svg>
+          </button>
+        </div>
       </form>
 
       <p class="hint">
-        Token 仅保存在本机凭据库，请勿把 Runtime 直接暴露到公网。当前地址将规范为
+        Token 仅保存在本机（系统凭据库，不可用时回退应用私有目录），请勿把 Runtime
+        直接暴露到公网。当前地址将规范为
         {{ url.trim() ? normalizeBaseUrl(url) : "—" }}。
       </p>
     </template>
   </section>
 </template>
+
+<style scoped>
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.form-actions .btn-primary {
+  flex: 1 1 auto;
+  width: auto;
+}
+.form-actions .icon-btn {
+  flex: 0 0 40px;
+}
+.form-actions .icon-btn:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+</style>

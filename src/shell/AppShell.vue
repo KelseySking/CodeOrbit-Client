@@ -6,6 +6,7 @@ import PendingView from "../views/PendingView.vue";
 import SessionsView from "../views/SessionsView.vue";
 import ConnectView from "../views/ConnectView.vue";
 import SessionDetailView from "../views/SessionDetailView.vue";
+import ConfirmDialog from "../components/ConfirmDialog.vue";
 import { useRuntimeConnection } from "../composables/useRuntimeConnection";
 import { formatRuntimeError } from "../runtimeApi";
 
@@ -46,6 +47,17 @@ const stack = ref<null | {
   subtitle: string;
 }>(null);
 
+type ConfirmAction =
+  | { kind: "dismissSession"; sessionId: string }
+  | { kind: "deleteTarget"; id: string; name: string };
+
+const confirmOpen = ref(false);
+const confirmTitle = ref("");
+const confirmMessage = ref("");
+const confirmLabel = ref("确认");
+const confirmDanger = ref(false);
+const confirmAction = ref<ConfirmAction | null>(null);
+
 const titles: Record<TabId, string> = {
   pending: "待处理",
   sessions: "会话",
@@ -84,6 +96,44 @@ function showToast(msg: string) {
   toastTimer = setTimeout(() => {
     toastVisible.value = false;
   }, 1600);
+}
+
+function openConfirm(opts: {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  danger?: boolean;
+  action: ConfirmAction;
+}) {
+  confirmTitle.value = opts.title;
+  confirmMessage.value = opts.message;
+  confirmLabel.value = opts.confirmLabel ?? "确认";
+  confirmDanger.value = opts.danger ?? false;
+  confirmAction.value = opts.action;
+  confirmOpen.value = true;
+}
+
+function closeConfirm() {
+  confirmOpen.value = false;
+  confirmAction.value = null;
+}
+
+function onConfirmCancel() {
+  closeConfirm();
+}
+
+async function onConfirmOk() {
+  const action = confirmAction.value;
+  closeConfirm();
+  if (!action) return;
+
+  if (action.kind === "dismissSession") {
+    await doDismissSession(action.sessionId);
+    return;
+  }
+  if (action.kind === "deleteTarget") {
+    await doDeleteTarget(action.id);
+  }
 }
 
 function onTabChange(tab: TabId) {
@@ -145,7 +195,17 @@ async function onConnectExisting(id: string) {
   }
 }
 
-async function onDeleteTarget(id: string) {
+function requestDeleteTarget(payload: { id: string; name: string }) {
+  openConfirm({
+    title: "删除目标",
+    message: `确定删除「${payload.name}」？本地保存的 Token 也会移除。`,
+    confirmLabel: "删除",
+    danger: true,
+    action: { kind: "deleteTarget", id: payload.id, name: payload.name },
+  });
+}
+
+async function doDeleteTarget(id: string) {
   try {
     await removeTarget(id);
     showToast("已删除目标");
@@ -207,7 +267,17 @@ function onDismiss(actionId: string) {
   );
 }
 
-async function onDismissSession(sessionId: string) {
+function requestDismissSession(sessionId: string) {
+  openConfirm({
+    title: "移除会话",
+    message: "从列表移除此会话？",
+    confirmLabel: "移除",
+    danger: true,
+    action: { kind: "dismissSession", sessionId },
+  });
+}
+
+async function doDismissSession(sessionId: string) {
   const api = client.value;
   if (!api) {
     showToast("尚未连接");
@@ -237,7 +307,7 @@ async function onDismissSession(sessionId: string) {
       @refresh="onRefresh"
     />
 
-    <main class="content">
+    <main class="content" :class="{ 'content--detail': !!stack }">
       <SessionDetailView
         v-if="stack?.type === 'session'"
         :session-id="stack.id"
@@ -266,7 +336,7 @@ async function onDismissSession(sessionId: string) {
           :loading="loading"
           @go-connect="goConnect"
           @open-session="openSession"
-          @dismiss="onDismissSession"
+          @dismiss="requestDismissSession"
         />
         <ConnectView
           v-else
@@ -280,7 +350,7 @@ async function onDismissSession(sessionId: string) {
           :error-message="errorMessage"
           @save-connect="onSaveConnect"
           @connect-existing="onConnectExisting"
-          @delete-target="onDeleteTarget"
+          @delete-target="requestDeleteTarget"
           @disconnect="onDisconnect"
           @go-pending="goPending"
           @toast="showToast"
@@ -299,6 +369,17 @@ async function onDismissSession(sessionId: string) {
     <div class="toast" :class="{ show: toastVisible }" role="status" aria-live="polite">
       {{ toastMessage }}
     </div>
+
+    <ConfirmDialog
+      :open="confirmOpen"
+      :title="confirmTitle"
+      :message="confirmMessage"
+      :confirm-label="confirmLabel"
+      cancel-label="取消"
+      :danger="confirmDanger"
+      @confirm="onConfirmOk"
+      @cancel="onConfirmCancel"
+    />
   </div>
 </template>
 
@@ -322,6 +403,13 @@ async function onDismissSession(sessionId: string) {
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   padding: 4px 0 16px;
+}
+
+.content--detail {
+  overflow: hidden;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .content::-webkit-scrollbar {

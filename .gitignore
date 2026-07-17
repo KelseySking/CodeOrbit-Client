@@ -9,8 +9,26 @@ lerna-debug.log*
 
 node_modules
 dist
+dist-android
 dist-ssr
 *.local
+*.apk
+*.aab
+*.jks
+*.keystore
+
+# Android / Tauri mobile build artifacts (keep gen/android sources)
+src-tauri/gen/android/**/build/
+src-tauri/gen/android/**/.gradle/
+src-tauri/gen/android/**/.kotlin/
+src-tauri/gen/android/**/.cxx/
+src-tauri/gen/android/**/jniLibs/
+src-tauri/gen/android/**/local.properties
+src-tauri/gen/android/**/*.apk
+src-tauri/gen/android/**/*.aab
+src-tauri/gen/android/**/*.so
+src-tauri/gen/android/**/*.keystore
+src-tauri/gen/android/**/*.jks
 
 # Editor directories and files
 .vscode/*

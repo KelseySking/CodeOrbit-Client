@@ -22,6 +22,20 @@ const error = ref("");
 const stickBottom = ref(true);
 const streamEl = ref<HTMLElement | null>(null);
 
+function scrollToBottom() {
+  const el = streamEl.value;
+  if (!el) return;
+  el.scrollTop = el.scrollHeight;
+}
+
+async function scrollToBottomWhenStuck() {
+  if (!stickBottom.value) return;
+  await nextTick();
+  requestAnimationFrame(() => {
+    scrollToBottom();
+  });
+}
+
 async function load(opts: { silent?: boolean } = {}) {
   if (!props.client || !props.sessionId) {
     messages.value = [];
@@ -42,11 +56,7 @@ async function load(opts: { silent?: boolean } = {}) {
     }
     messages.value = next;
     error.value = "";
-    if (stickBottom.value) {
-      await nextTick();
-      const el = streamEl.value;
-      if (el) el.scrollTop = el.scrollHeight;
-    }
+    await scrollToBottomWhenStuck();
   } catch (e) {
     if (!silent) {
       error.value = formatRuntimeError(e);
@@ -54,6 +64,8 @@ async function load(opts: { silent?: boolean } = {}) {
     }
   } finally {
     loading.value = false;
+    // layout may settle after loading flag flips off
+    await scrollToBottomWhenStuck();
   }
 }
 
@@ -121,3 +133,22 @@ watch(
     </div>
   </section>
 </template>
+
+<style scoped>
+.msg-stream {
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px 18px 20px;
+}
+
+.msg-stream::-webkit-scrollbar {
+  display: none;
+}
+</style>
