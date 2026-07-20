@@ -9,6 +9,11 @@ import SessionDetailView from "../views/SessionDetailView.vue";
 import ConfirmDialog from "../components/ConfirmDialog.vue";
 import { useRuntimeConnection } from "../composables/useRuntimeConnection";
 import { formatRuntimeError } from "../runtimeApi";
+import {
+  animatePresence,
+  cancelMotion,
+  MOTION,
+} from "../utils/motion";
 
 const {
   targets,
@@ -294,6 +299,44 @@ async function doDismissSession(sessionId: string) {
     showToast(formatRuntimeError(error));
   }
 }
+
+/* —— presence transitions (Anime via motion.ts) —— */
+
+function onTabEnter(el: Element, done: () => void) {
+  void animatePresence(el, "fade-up", "in", {
+    duration: MOTION.durationFast,
+  }).then(done);
+}
+
+function onTabLeave(el: Element, done: () => void) {
+  void animatePresence(el, "fade", "out", {
+    duration: MOTION.durationFast - 30,
+  }).then(done);
+}
+
+function onStackEnter(el: Element, done: () => void) {
+  void animatePresence(el, "fade-right", "in", {
+    duration: MOTION.durationSlow,
+  }).then(done);
+}
+
+function onStackLeave(el: Element, done: () => void) {
+  void animatePresence(el, "fade-right", "out", {
+    duration: MOTION.duration,
+  }).then(done);
+}
+
+function onTabBarEnter(el: Element, done: () => void) {
+  void animatePresence(el, "tabbar", "in").then(done);
+}
+
+function onTabBarLeave(el: Element, done: () => void) {
+  void animatePresence(el, "tabbar", "out").then(done);
+}
+
+function onPresenceCancelled(el: Element) {
+  cancelMotion(el);
+}
 </script>
 
 <template>
@@ -308,63 +351,94 @@ async function doDismissSession(sessionId: string) {
     />
 
     <main class="content" :class="{ 'content--detail': !!stack }">
-      <SessionDetailView
-        v-if="stack?.type === 'session'"
-        :session-id="stack.id"
-        :title="stack.title"
-        :client="client"
-        :reload-token="sessionsEpoch"
-      />
-      <template v-else>
-        <PendingView
-          v-if="activeTab === 'pending'"
-          :connection-state="connectionState"
-          :pending="pending"
-          :loading="loading"
-          @go-connect="goConnect"
-          @toast="showToast"
-          @retry="onRefresh"
-          @allow="onAllow"
-          @deny="onDeny"
-          @answer="onAnswer"
-          @dismiss="onDismiss"
-        />
-        <SessionsView
-          v-else-if="activeTab === 'sessions'"
-          :connected="isConnected"
-          :sessions="sessions"
-          :loading="loading"
-          @go-connect="goConnect"
-          @open-session="openSession"
-          @dismiss="requestDismissSession"
-        />
-        <ConnectView
-          v-else
-          :connection-state="connectionState"
-          :pending-count="pendingCount"
-          :loading="loading"
-          :targets="targets"
-          :active-target="activeTarget"
-          :health="health"
-          :version="version"
-          :error-message="errorMessage"
-          @save-connect="onSaveConnect"
-          @connect-existing="onConnectExisting"
-          @delete-target="requestDeleteTarget"
-          @disconnect="onDisconnect"
-          @go-pending="goPending"
-          @toast="showToast"
-        />
-      </template>
+      <Transition
+        mode="out-in"
+        :css="false"
+        @enter="onTabEnter"
+        @leave="onTabLeave"
+        @enter-cancelled="onPresenceCancelled"
+        @leave-cancelled="onPresenceCancelled"
+      >
+        <div v-if="!stack" :key="activeTab" class="tab-pane">
+          <PendingView
+            v-if="activeTab === 'pending'"
+            :connection-state="connectionState"
+            :pending="pending"
+            :loading="loading"
+            @go-connect="goConnect"
+            @toast="showToast"
+            @retry="onRefresh"
+            @allow="onAllow"
+            @deny="onDeny"
+            @answer="onAnswer"
+            @dismiss="onDismiss"
+          />
+          <SessionsView
+            v-else-if="activeTab === 'sessions'"
+            :connected="isConnected"
+            :sessions="sessions"
+            :loading="loading"
+            @go-connect="goConnect"
+            @open-session="openSession"
+            @dismiss="requestDismissSession"
+          />
+          <ConnectView
+            v-else
+            :connection-state="connectionState"
+            :pending-count="pendingCount"
+            :loading="loading"
+            :targets="targets"
+            :active-target="activeTarget"
+            :health="health"
+            :version="version"
+            :error-message="errorMessage"
+            @save-connect="onSaveConnect"
+            @connect-existing="onConnectExisting"
+            @delete-target="requestDeleteTarget"
+            @disconnect="onDisconnect"
+            @go-pending="goPending"
+            @toast="showToast"
+          />
+        </div>
+      </Transition>
+
+      <Transition
+        :css="false"
+        @enter="onStackEnter"
+        @leave="onStackLeave"
+        @enter-cancelled="onPresenceCancelled"
+        @leave-cancelled="onPresenceCancelled"
+      >
+        <div
+          v-if="stack?.type === 'session'"
+          :key="stack.id"
+          class="stack-pane"
+        >
+          <SessionDetailView
+            :session-id="stack.id"
+            :title="stack.title"
+            :client="client"
+            :reload-token="sessionsEpoch"
+          />
+        </div>
+      </Transition>
     </main>
 
-    <TabBar
-      v-if="!stack"
-      :active="activeTab"
-      :pending-count="pendingCount"
-      :show-badge="showPendingBadge"
-      @change="onTabChange"
-    />
+    <Transition
+      :css="false"
+      @enter="onTabBarEnter"
+      @leave="onTabBarLeave"
+      @enter-cancelled="onPresenceCancelled"
+      @leave-cancelled="onPresenceCancelled"
+    >
+      <TabBar
+        v-if="!stack"
+        :active="activeTab"
+        :pending-count="pendingCount"
+        :show-badge="showPendingBadge"
+        @change="onTabChange"
+      />
+    </Transition>
 
     <div class="toast" :class="{ show: toastVisible }" role="status" aria-live="polite">
       {{ toastMessage }}
@@ -403,6 +477,7 @@ async function doDismissSession(sessionId: string) {
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   padding: 4px 0 16px;
+  position: relative;
 }
 
 .content--detail {
@@ -414,5 +489,21 @@ async function doDismissSession(sessionId: string) {
 
 .content::-webkit-scrollbar {
   display: none;
+}
+
+.tab-pane {
+  min-height: 100%;
+  will-change: transform, opacity;
+}
+
+.stack-pane {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg);
+  will-change: transform, opacity;
+  z-index: 2;
 }
 </style>

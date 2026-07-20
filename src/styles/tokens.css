@@ -28,6 +28,13 @@
   --radius-pill: 999px;
   --hit: 48px;
 
+  /* Motion — lightweight system feel (paired with src/utils/motion.ts) */
+  --motion-duration: 220ms;
+  --motion-duration-fast: 180ms;
+  --motion-duration-slow: 280ms;
+  --motion-ease: cubic-bezier(0.2, 0, 0, 1);
+  --motion-distance: 12px;
+
   --co-bg: var(--bg);
   --co-surface: var(--surface);
   --co-text: var(--fg);
@@ -64,6 +71,32 @@ body {
   font-size: var(--fs-body);
   line-height: 1.4;
   -webkit-font-smoothing: antialiased;
+  /* Mobile WebView: kill default blue tap flash */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Interactive targets: no system blue overlay; keep keyboard focus ring */
+button,
+a,
+[role="button"],
+input,
+textarea,
+select,
+label {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus:not(:focus-visible),
+a:focus:not(:focus-visible),
+[role="button"]:focus:not(:focus-visible) {
+  outline: none;
+}
+
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
 }
 
 button,
