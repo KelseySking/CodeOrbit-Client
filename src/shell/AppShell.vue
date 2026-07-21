@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import TopBar from "./TopBar.vue";
 import TabBar, { type TabId } from "./TabBar.vue";
 import PendingView from "../views/PendingView.vue";
@@ -14,6 +14,11 @@ import {
   cancelMotion,
   MOTION,
 } from "../utils/motion";
+import {
+  keepAliveStart,
+  keepAliveStop,
+  keepAliveUpdate,
+} from "../utils/keepAlive";
 
 const {
   targets,
@@ -163,7 +168,31 @@ onUnmounted(() => {
     clearTimeout(exitHintTimer);
     exitHintTimer = null;
   }
+  void keepAliveStop();
 });
+
+// Android FGS + ongoing notification (desktop no-op)
+let keepAliveRunning = false;
+watch(
+  [isConnected, activeTarget, pendingCount],
+  ([connected, target, count]) => {
+    if (!connected || !target) {
+      if (keepAliveRunning) {
+        keepAliveRunning = false;
+        void keepAliveStop();
+      }
+      return;
+    }
+    const payload = { targetName: target.name, pendingCount: count };
+    if (!keepAliveRunning) {
+      keepAliveRunning = true;
+      void keepAliveStart(payload);
+    } else {
+      void keepAliveUpdate(payload);
+    }
+  },
+  { immediate: true },
+);
 
 function showToast(msg: string) {
   toastMessage.value = msg;

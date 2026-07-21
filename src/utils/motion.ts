@@ -228,3 +228,15 @@ export function animateConfirm(
 export function cancelMotion(el: Element | null | undefined) {
   if (el) cancelActive(el);
 }
+
+/** Telegram-like bubble enter: slight rise + fade. */
+export function animateMessageIn(el: Element): Promise<void> {
+  return run(
+    el,
+    {
+      opacity: [0, 1],
+      translateY: [MOTION.distance, 0],
+    },
+    motionDuration(MOTION.durationFast),
+  );
+}

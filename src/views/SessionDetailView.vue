@@ -2,6 +2,7 @@
 import { nextTick, onMounted, ref, watch } from "vue";
 import { formatRuntimeError, type ChatMessageDto } from "../runtimeApi";
 import { renderMarkdown } from "../utils/markdown";
+import { animateMessageIn } from "../utils/motion";
 
 type SessionClient = {
   getSessionMessages: (sessionId: string) => Promise<ChatMessageDto[]>;
@@ -21,6 +22,24 @@ const loading = ref(false);
 const error = ref("");
 const stickBottom = ref(true);
 const streamEl = ref<HTMLElement | null>(null);
+/** keys of bubbles that should play enter animation once */
+const animateKeys = ref<Set<string>>(new Set());
+
+function msgKey(m: ChatMessageDto, i: number): string {
+  return `${props.sessionId}-${i}-${m.timestampUtc}-${m.text.slice(0, 24)}`;
+}
+
+function sameMsg(a: ChatMessageDto, b: ChatMessageDto): boolean {
+  return a.isUser === b.isUser && a.text === b.text && a.timestampUtc === b.timestampUtc;
+}
+
+function isPrefixAppend(prev: ChatMessageDto[], next: ChatMessageDto[]): boolean {
+  if (prev.length === 0 || next.length <= prev.length) return false;
+  for (let i = 0; i < prev.length; i++) {
+    if (!sameMsg(prev[i], next[i])) return false;
+  }
+  return true;
+}
 
 function scrollToBottom() {
   const el = streamEl.value;
@@ -36,9 +55,29 @@ async function scrollToBottomWhenStuck() {
   });
 }
 
+async function playEnterAnimations() {
+  const keys = animateKeys.value;
+  if (!keys.size) return;
+  await nextTick();
+  requestAnimationFrame(() => {
+    const root = streamEl.value;
+    if (!root) {
+      animateKeys.value = new Set();
+      return;
+    }
+    const nodes = root.querySelectorAll<HTMLElement>("[data-msg-key]");
+    for (const el of nodes) {
+      const key = el.dataset.msgKey;
+      if (key && keys.has(key)) void animateMessageIn(el);
+    }
+    animateKeys.value = new Set();
+  });
+}
+
 async function load(opts: { silent?: boolean } = {}) {
   if (!props.client || !props.sessionId) {
     messages.value = [];
+    animateKeys.value = new Set();
     return;
   }
   const silent = opts.silent && messages.value.length > 0;
@@ -54,13 +93,25 @@ async function load(opts: { silent?: boolean } = {}) {
       const session = await props.client.getSession(props.sessionId);
       next = session.recentMessages ?? [];
     }
+
+    const prev = messages.value;
+    const keys = new Set<string>();
+    // first screen / empty prev → no animation; pure append → animate tail only
+    if (isPrefixAppend(prev, next)) {
+      for (let i = prev.length; i < next.length; i++) {
+        keys.add(msgKey(next[i], i));
+      }
+    }
+    animateKeys.value = keys;
     messages.value = next;
     error.value = "";
     await scrollToBottomWhenStuck();
+    if (keys.size) await playEnterAnimations();
   } catch (e) {
     if (!silent) {
       error.value = formatRuntimeError(e);
       messages.value = [];
+      animateKeys.value = new Set();
     }
   } finally {
     loading.value = false;
@@ -93,6 +144,7 @@ watch(
   () => props.sessionId,
   () => {
     stickBottom.value = true;
+    animateKeys.value = new Set();
     void load();
   },
 );
@@ -119,9 +171,10 @@ watch(
     <template v-else-if="messages.length">
       <div
         v-for="(m, i) in messages"
-        :key="`${sessionId}-${i}-${m.timestampUtc}-${m.text.slice(0, 24)}`"
+        :key="msgKey(m, i)"
         class="msg"
         :class="roleOf(m)"
+        :data-msg-key="msgKey(m, i)"
       >
         <div class="msg-body md" v-html="renderMarkdown(m.text)" />
         <span class="time num">{{ timeOf(m.timestampUtc) }}</span>

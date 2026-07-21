@@ -466,6 +466,46 @@
   flex: 0 0 36px;
   margin: 0;
 }
+
+/* swipe-left delete shell for SessionsView */
+.session-swipe {
+  position: relative;
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  touch-action: pan-y;
+}
+.session-swipe-delete {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 72px;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: var(--danger);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  z-index: 0;
+}
+.session-swipe-front {
+  position: relative;
+  z-index: 1;
+  transition: transform var(--motion-duration-fast) var(--motion-ease);
+  will-change: transform;
+  touch-action: pan-y;
+  background: var(--surface);
+}
+.session-swipe-front.is-swiping {
+  transition: none;
+}
+/* while dragging/open, suppress press-scale so it doesn't fight translateX */
+.session-swipe-front.is-swiping:active,
+.session-swipe-front.is-open:active {
+  transform: none;
+}
 /* ConnectView target rows still use .right */
 .session-row .right {
   text-align: right;

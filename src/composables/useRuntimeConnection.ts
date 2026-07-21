@@ -20,6 +20,7 @@ import {
   saveRuntimeTarget,
   type RuntimeTarget,
 } from "../targetStore";
+import { pendingAlertClear, pendingAlertNotify } from "../utils/keepAlive";
 
 export type ConnectFormInput = {
   id?: string;
@@ -30,6 +31,20 @@ export type ConnectFormInput = {
 };
 
 export type WsState = "idle" | "open" | "closed" | "reconnecting";
+
+function pendingSummary(action: PendingActionDto): string {
+  const perm = action.permission;
+  if (perm) {
+    return perm.description?.trim() || perm.toolName?.trim() || "权限审批";
+  }
+  const q = action.question;
+  if (q) {
+    const text = q.question?.trim() || q.header?.trim();
+    if (text) return text.length > 48 ? `${text.slice(0, 48)}…` : text;
+    return "AI 提问";
+  }
+  return action.kind || "待处理";
+}
 
 export function useRuntimeConnection() {
   const targets = ref<RuntimeTarget[]>([]);
@@ -53,6 +68,9 @@ export function useRuntimeConnection() {
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let wsGeneration = 0;
   let intentionalClose = false;
+  /** R7: first pending snapshot after connect is baseline only */
+  let pendingBaselineReady = false;
+  let knownPendingIds = new Set<string>();
 
   const isConnected = computed(() => connectionState.value === "connected");
 
@@ -92,6 +110,12 @@ export function useRuntimeConnection() {
     capabilities.value = null;
     pending.value = [];
     sessions.value = [];
+  }
+
+  function resetPendingAlertState() {
+    pendingBaselineReady = false;
+    knownPendingIds = new Set();
+    void pendingAlertClear();
   }
 
   function stopEvents() {
@@ -228,6 +252,37 @@ export function useRuntimeConnection() {
     errorMessage.value = "";
     loading.value = false;
     clearSnapshots();
+    resetPendingAlertState();
+  }
+
+  function maybeAlertNewPending(list: PendingActionDto[]) {
+    const ids = new Set(list.map((item) => item.actionId));
+    if (!pendingBaselineReady) {
+      knownPendingIds = ids;
+      pendingBaselineReady = true;
+      return;
+    }
+
+    const newcomers = list.filter((item) => !knownPendingIds.has(item.actionId));
+    knownPendingIds = ids;
+
+    if (list.length === 0) {
+      void pendingAlertClear();
+      return;
+    }
+    if (newcomers.length === 0) return;
+
+    const count = list.length;
+    const body =
+      newcomers.length === 1 && count === 1
+        ? pendingSummary(newcomers[0])
+        : `有 ${count} 条待处理`;
+
+    void pendingAlertNotify({
+      title: "CodeOrbit · 待处理",
+      body,
+      count,
+    });
   }
 
   async function loadPending(api?: ReturnType<typeof createRuntimeClient> | null) {
@@ -236,7 +291,12 @@ export function useRuntimeConnection() {
       pending.value = [];
       return;
     }
-    pending.value = await clientApi.getPending();
+    const list = await clientApi.getPending();
+    pending.value = list;
+    // baseline only after we are connected; probe (connecting) just fills list
+    if (connectionState.value === "connected") {
+      maybeAlertNewPending(list);
+    }
   }
 
   async function loadSessions(api?: ReturnType<typeof createRuntimeClient> | null) {
@@ -273,6 +333,10 @@ export function useRuntimeConnection() {
     errorMessage.value = "";
     activeTarget.value = target;
     clearSnapshots();
+    // new connection → re-baseline pending alerts
+    pendingBaselineReady = false;
+    knownPendingIds = new Set();
+    void pendingAlertClear();
 
     try {
       const token = (tokenOverride ?? (await getRuntimeTargetToken(target.id))).trim();
@@ -293,6 +357,14 @@ export function useRuntimeConnection() {
       if (rid !== requestId) return;
 
       connectionState.value = "connected";
+      // R7 baseline must be taken while connected (probe runs in connecting).
+      // First successful load seeds ids only; no alert. Failed → leave unready.
+      try {
+        await loadPending(api);
+      } catch {
+        // keep pendingBaselineReady false until a later successful load
+      }
+      if (rid !== requestId) return;
       startEvents(api);
     } catch (error) {
       if (rid !== requestId) return;
@@ -301,6 +373,7 @@ export function useRuntimeConnection() {
       connectionState.value = classifyError(error);
       errorMessage.value = formatRuntimeError(error);
       clearSnapshots();
+      resetPendingAlertState();
       throw error;
     } finally {
       if (rid === requestId) loading.value = false;

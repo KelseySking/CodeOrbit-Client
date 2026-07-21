@@ -274,6 +274,7 @@ fn stop_local_runtime() -> Result<LocalRuntimeStartResult, String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_keepalive::init())
         .invoke_handler(tauri::generate_handler![
             list_runtime_targets,
             save_runtime_target,

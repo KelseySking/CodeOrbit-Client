@@ -1,0 +1,11 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "Allow keep-alive FGS and pending alert notifications"
+permissions = [
+  "allow-keep-alive-start",
+  "allow-keep-alive-update",
+  "allow-keep-alive-stop",
+  "allow-pending-alert-notify",
+  "allow-pending-alert-clear",
+]

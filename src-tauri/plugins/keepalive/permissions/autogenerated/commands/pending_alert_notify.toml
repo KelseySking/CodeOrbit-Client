@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pending-alert-notify"
+description = "Enables the pending_alert_notify command without any pre-configured scope."
+commands.allow = ["pending_alert_notify"]
+
+[[permission]]
+identifier = "deny-pending-alert-notify"
+description = "Denies the pending_alert_notify command without any pre-configured scope."
+commands.deny = ["pending_alert_notify"]

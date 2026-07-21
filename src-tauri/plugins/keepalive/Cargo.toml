@@ -1,0 +1,16 @@
+[package]
+name = "tauri-plugin-keepalive"
+version = "0.1.0"
+description = "Android FGS keep-alive + pending alerts for CodeOrbit Companion"
+authors = ["CodeOrbit"]
+edition = "2021"
+rust-version = "1.77.2"
+links = "tauri-plugin-keepalive"
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from "vue";
 import { summarizeSession, type SessionDto } from "../runtimeApi";
 
 defineProps<{
@@ -12,6 +13,17 @@ const emit = defineEmits<{
   openSession: [session: { id: string; title: string; subtitle: string }];
   dismiss: [sessionId: string];
 }>();
+
+const SWIPE_OPEN = 72;
+const openedId = ref<string | null>(null);
+const dragId = ref<string | null>(null);
+const dragX = ref(0);
+let startX = 0;
+let startY = 0;
+let tracking = false;
+let decided = false;
+let horizontal = false;
+let baseX = 0;
 
 function titleOf(s: SessionDto): string {
   return (
@@ -44,6 +56,12 @@ function relativeTime(iso: string): string {
 }
 
 function open(s: SessionDto) {
+  // 展开态点本行 → 先收起；点其他未展开行 → 收起后打开
+  if (openedId.value === s.sessionId) {
+    openedId.value = null;
+    return;
+  }
+  openedId.value = null;
   emit("openSession", {
     id: s.sessionId,
     title: titleOf(s),
@@ -51,9 +69,79 @@ function open(s: SessionDto) {
   });
 }
 
+function frontStyle(id: string): Record<string, string> | undefined {
+  const x = offsetOf(id);
+  // only set transform when needed so .session-row:active scale still works
+  return x ? { transform: `translateX(${x}px)` } : undefined;
+}
+
 function onDismiss(e: Event, id: string) {
   e.stopPropagation();
+  openedId.value = null;
   emit("dismiss", id);
+}
+
+function offsetOf(id: string): number {
+  if (dragId.value === id) return dragX.value;
+  return openedId.value === id ? -SWIPE_OPEN : 0;
+}
+
+function onTouchStart(e: TouchEvent, id: string) {
+  if (e.touches.length !== 1) return;
+  const t = e.touches[0];
+  startX = t.clientX;
+  startY = t.clientY;
+  tracking = true;
+  decided = false;
+  horizontal = false;
+  baseX = openedId.value === id ? -SWIPE_OPEN : 0;
+  if (openedId.value && openedId.value !== id) {
+    openedId.value = null;
+    baseX = 0;
+  }
+  dragId.value = id;
+  dragX.value = baseX;
+}
+
+function onTouchMove(e: TouchEvent, id: string) {
+  if (!tracking || dragId.value !== id || e.touches.length !== 1) return;
+  const t = e.touches[0];
+  const dx = t.clientX - startX;
+  const dy = t.clientY - startY;
+  if (!decided) {
+    if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+    decided = true;
+    horizontal = Math.abs(dx) > Math.abs(dy);
+    if (!horizontal) {
+      tracking = false;
+      dragId.value = null;
+      return;
+    }
+  }
+  if (!horizontal) return;
+  e.preventDefault();
+  const next = Math.min(0, Math.max(-SWIPE_OPEN, baseX + dx));
+  dragX.value = next;
+}
+
+function onTouchEnd(id: string) {
+  if (dragId.value !== id) return;
+  const x = dragX.value;
+  dragId.value = null;
+  tracking = false;
+  if (!decided || !horizontal) {
+    dragX.value = 0;
+    return;
+  }
+  openedId.value = x <= -SWIPE_OPEN / 2 ? id : null;
+  dragX.value = 0;
+}
+
+function onTouchCancel(id: string) {
+  if (dragId.value !== id) return;
+  dragId.value = null;
+  tracking = false;
+  dragX.value = 0;
 }
 </script>
 
@@ -62,41 +150,45 @@ function onDismiss(e: Event, id: string) {
     <template v-if="connected">
       <div v-if="loading && !sessions.length" class="meta" style="padding: 12px 4px">加载中…</div>
 
-      <div
-        v-for="s in sessions"
-        :key="s.sessionId"
-        class="session-row"
-        role="button"
-        tabindex="0"
-        @click="open(s)"
-        @keydown.enter.prevent="open(s)"
-        @keydown.space.prevent="open(s)"
-      >
-        <span class="dot" :class="{ idle: isIdle(s) }" aria-hidden="true" />
-        <div class="body">
-          <div class="head">
-            <div class="title">{{ titleOf(s) }}</div>
-            <div class="num time">{{ relativeTime(s.lastUpdatedAtUtc || s.createdAtUtc) }}</div>
+      <div v-for="s in sessions" :key="s.sessionId" class="session-swipe">
+        <button
+          type="button"
+          class="session-swipe-delete"
+          aria-label="移除会话"
+          @click="onDismiss($event, s.sessionId)"
+        >
+          删除
+        </button>
+        <div
+          class="session-row session-swipe-front"
+          :class="{
+            'is-swiping': dragId === s.sessionId,
+            'is-open': openedId === s.sessionId && dragId !== s.sessionId,
+          }"
+          role="button"
+          tabindex="0"
+          :style="frontStyle(s.sessionId)"
+          @click="open(s)"
+          @keydown.enter.prevent="open(s)"
+          @keydown.space.prevent="open(s)"
+          @touchstart.passive="onTouchStart($event, s.sessionId)"
+          @touchmove="onTouchMove($event, s.sessionId)"
+          @touchend="onTouchEnd(s.sessionId)"
+          @touchcancel="onTouchCancel(s.sessionId)"
+        >
+          <span class="dot" :class="{ idle: isIdle(s) }" aria-hidden="true" />
+          <div class="body">
+            <div class="head">
+              <div class="title">{{ titleOf(s) }}</div>
+              <div class="num time">{{ relativeTime(s.lastUpdatedAtUtc || s.createdAtUtc) }}</div>
+            </div>
+            <div class="sub">{{ subOf(s) }}</div>
           </div>
-          <div class="sub">{{ subOf(s) }}</div>
-        </div>
-        <div class="actions">
-          <button
-            type="button"
-            class="icon-btn danger"
-            aria-label="移除会话"
-            @click="onDismiss($event, s.sessionId)"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 7h16" />
-              <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-              <path d="M8 7l1 12a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1l1-12" />
-              <path d="M10 11v6M14 11v6" />
+          <div class="actions">
+            <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M9 6l6 6-6 6" />
             </svg>
-          </button>
-          <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M9 6l6 6-6 6" />
-          </svg>
+          </div>
         </div>
       </div>
 

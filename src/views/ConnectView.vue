@@ -30,8 +30,17 @@ const name = ref("家里电脑");
 const url = ref("http://127.0.0.1:32145");
 const token = ref("");
 const showToken = ref(false);
+const detailsOpen = ref(false);
 const errUrl = ref("");
 const errToken = ref("");
+
+// reconnect / disconnect → collapse details (default closed)
+watch(
+  () => props.connectionState,
+  (state) => {
+    if (state !== "connected") detailsOpen.value = false;
+  },
+);
 
 function applyTarget(target: RuntimeTarget | null) {
   if (!target) {
@@ -139,8 +148,14 @@ function removeSelected() {
     <template v-if="connectionState === 'connected' && activeTarget">
       <div class="card soft">
         <div class="row-between" style="align-items: flex-start">
-          <div>
-            <div class="row" style="gap: 8px; margin-bottom: 6px">
+          <button
+            type="button"
+            class="conn-title"
+            :aria-expanded="detailsOpen"
+            aria-controls="conn-details"
+            @click="detailsOpen = !detailsOpen"
+          >
+            <span class="row" style="gap: 8px">
               <span
                 style="
                   width: 8px;
@@ -148,17 +163,29 @@ function removeSelected() {
                   border-radius: 50%;
                   background: var(--accent);
                   display: inline-block;
+                  flex-shrink: 0;
                 "
+                aria-hidden="true"
               />
               <span class="h3">已连接 · {{ activeTarget.name }}</span>
-            </div>
-            <p class="meta num" style="margin: 0">{{ activeTarget.baseUrl }}</p>
-            <p v-if="version" class="meta" style="margin: 6px 0 0">
-              {{ version.product }} {{ version.version }}
-              <template v-if="health"> · {{ health.status }}</template>
-            </p>
-          </div>
+              <svg
+                class="conn-chev"
+                :class="{ open: detailsOpen }"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </span>
+          </button>
           <button type="button" class="btn-text" @click="$emit('disconnect')">断开</button>
+        </div>
+        <div v-show="detailsOpen" id="conn-details" class="conn-details">
+          <p class="meta num" style="margin: 0">{{ activeTarget.baseUrl }}</p>
+          <p v-if="version" class="meta" style="margin: 6px 0 0">
+            {{ version.product }} {{ version.version }}
+            <template v-if="health"> · {{ health.status }}</template>
+          </p>
         </div>
       </div>
 
@@ -269,9 +296,20 @@ function removeSelected() {
               :aria-label="showToken ? '隐藏 Token' : '显示 Token'"
               @click="showToken = !showToken"
             >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
+              <!-- 显示=睁眼；隐藏=闭眼（斜线） -->
+              <svg v-if="showToken" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
                 <circle cx="12" cy="12" r="3" />
+              </svg>
+              <svg v-else viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3 3l18 18" />
+                <path d="M10.6 10.6a2 2 0 0 0 2.8 2.8" />
+                <path
+                  d="M9.9 5.1A10.4 10.4 0 0 1 12 5c6.5 0 10 7 10 7a17.3 17.3 0 0 1-3.2 4.1"
+                />
+                <path
+                  d="M6.1 6.1C3.7 7.8 2 12 2 12s3.5 7 10 7a10.4 10.4 0 0 0 4.1-.8"
+                />
               </svg>
             </button>
           </div>
@@ -331,5 +369,32 @@ function removeSelected() {
 .form-actions .icon-btn:disabled {
   opacity: 0.45;
   pointer-events: none;
+}
+.conn-title {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.conn-chev {
+  width: 16px;
+  height: 16px;
+  stroke: var(--muted);
+  fill: none;
+  stroke-width: 1.8;
+  flex-shrink: 0;
+  transition: transform var(--motion-duration-fast, 180ms) ease;
+}
+.conn-chev.open {
+  transform: rotate(180deg);
+}
+.conn-details {
+  margin-top: 10px;
+  padding-top: 2px;
 }
 </style>
