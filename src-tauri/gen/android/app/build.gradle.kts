@@ -17,7 +17,9 @@ android {
     compileSdk = 36
     namespace = "com.codeorbit.client"
     defaultConfig {
-        manifestPlaceholders["usesCleartextTraffic"] = "false"
+        // Companion talks to LAN Runtime over http/ws; REST uses Rust proxy, WS is WebView-direct.
+        // Release must allow cleartext or WS stays stuck in reconnect forever.
+        manifestPlaceholders["usesCleartextTraffic"] = "true"
         applicationId = "com.codeorbit.client"
         minSdk = 24
         targetSdk = 36
@@ -26,7 +28,6 @@ android {
     }
     buildTypes {
         getByName("debug") {
-            manifestPlaceholders["usesCleartextTraffic"] = "true"
             isDebuggable = true
             isJniDebuggable = true
             isMinifyEnabled = false

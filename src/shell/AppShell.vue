@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import TopBar from "./TopBar.vue";
 import TabBar, { type TabId } from "./TabBar.vue";
 import PendingView from "../views/PendingView.vue";
@@ -52,9 +52,19 @@ const stack = ref<null | {
   subtitle: string;
 }>(null);
 
+/** SPA history: root guard + session detail so Android gesture/back uses WebView.goBack */
+let stackHistoryOwned = false;
+/** suppress popstate side-effects while we programmatically history.back() */
+let suppressPopstate = false;
+
 type ConfirmAction =
   | { kind: "dismissSession"; sessionId: string }
   | { kind: "deleteTarget"; id: string; name: string };
+
+/** root-tab double-back exit window (ms) */
+const EXIT_HINT_MS = 2000;
+let exitHintUntil = 0;
+let exitHintTimer: ReturnType<typeof setTimeout> | null = null;
 
 const confirmOpen = ref(false);
 const confirmTitle = ref("");
@@ -85,12 +95,73 @@ const chromeSubtitle = computed(() => {
   return undefined;
 });
 
+function pushRootGuard() {
+  history.pushState({ coRoot: 1 }, "");
+}
+
+function onPopState() {
+  if (suppressPopstate) {
+    suppressPopstate = false;
+    return;
+  }
+
+  // Confirm has no history entry; re-arm so cancel doesn't drop the page.
+  if (confirmOpen.value) {
+    closeConfirm();
+    if (stack.value) {
+      history.pushState({ coStack: "session" }, "");
+      stackHistoryOwned = true;
+    } else {
+      pushRootGuard();
+    }
+    return;
+  }
+
+  if (stack.value) {
+    stack.value = null;
+    stackHistoryOwned = false;
+    // session entry was popped; root guard still under us
+    return;
+  }
+
+  // Tab root: first back = hint, second within window = exit
+  pushRootGuard();
+  const now = Date.now();
+  if (now < exitHintUntil) {
+    exitHintUntil = 0;
+    if (exitHintTimer) {
+      clearTimeout(exitHintTimer);
+      exitHintTimer = null;
+    }
+    void doExitApp();
+    return;
+  }
+  exitHintUntil = now + EXIT_HINT_MS;
+  showToast("再按一次返回退出应用");
+  if (exitHintTimer) clearTimeout(exitHintTimer);
+  exitHintTimer = setTimeout(() => {
+    exitHintUntil = 0;
+    exitHintTimer = null;
+  }, EXIT_HINT_MS);
+}
+
 onMounted(async () => {
+  // Keep one history entry under tabs so root back is interceptable.
+  pushRootGuard();
+  window.addEventListener("popstate", onPopState);
   try {
     await loadTargets();
     if (targets.value.length === 0) activeTab.value = "connect";
   } catch (error) {
     showToast(formatRuntimeError(error));
+  }
+});
+
+onUnmounted(() => {
+  window.removeEventListener("popstate", onPopState);
+  if (exitHintTimer) {
+    clearTimeout(exitHintTimer);
+    exitHintTimer = null;
   }
 });
 
@@ -141,27 +212,57 @@ async function onConfirmOk() {
   }
 }
 
-function onTabChange(tab: TabId) {
+async function doExitApp() {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("exit_app");
+  } catch {
+    showToast("无法退出，请用系统手势返回桌面");
+  }
+}
+
+function releaseStackHistory() {
+  if (!stackHistoryOwned) {
+    return;
+  }
+  stackHistoryOwned = false;
+  suppressPopstate = true;
+  history.back();
+}
+
+function clearStack() {
+  if (!stack.value) return;
   stack.value = null;
+  releaseStackHistory();
+}
+
+function onTabChange(tab: TabId) {
+  clearStack();
   activeTab.value = tab;
 }
 
 function goConnect() {
-  stack.value = null;
+  clearStack();
   activeTab.value = "connect";
 }
 
 function goPending() {
-  stack.value = null;
+  clearStack();
   activeTab.value = "pending";
 }
 
 function openSession(session: { id: string; title: string; subtitle: string }) {
   stack.value = { type: "session", ...session };
+  if (stackHistoryOwned) {
+    history.replaceState({ coStack: "session" }, "");
+  } else {
+    history.pushState({ coStack: "session" }, "");
+    stackHistoryOwned = true;
+  }
 }
 
 function popStack() {
-  stack.value = null;
+  clearStack();
 }
 
 async function onRefresh() {
@@ -292,7 +393,7 @@ async function doDismissSession(sessionId: string) {
     await api.dismissSession(sessionId);
     await loadSessions(api);
     if (stack.value?.type === "session" && stack.value.id === sessionId) {
-      stack.value = null;
+      clearStack();
     }
     showToast("已移除会话");
   } catch (error) {

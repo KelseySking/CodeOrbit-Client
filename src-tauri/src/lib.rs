@@ -210,6 +210,11 @@ fn start_local_runtime() -> Result<LocalRuntimeStartResult, String> {
 }
 
 #[tauri::command]
+fn exit_app(app: AppHandle) {
+    app.exit(0);
+}
+
+#[tauri::command]
 fn stop_local_runtime() -> Result<LocalRuntimeStartResult, String> {
     let mut child_slot = local_runtime_child().lock().map_err(|_| {
         "Could not lock local Runtime process state. Restart CodeOrbit Client.".to_string()
@@ -276,7 +281,8 @@ pub fn run() {
             get_runtime_target_token,
             runtime_request,
             start_local_runtime,
-            stop_local_runtime
+            stop_local_runtime,
+            exit_app
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

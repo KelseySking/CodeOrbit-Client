@@ -73,30 +73,30 @@ function onDismiss(e: Event, id: string) {
         @keydown.space.prevent="open(s)"
       >
         <span class="dot" :class="{ idle: isIdle(s) }" aria-hidden="true" />
-        <div>
-          <div class="title">{{ titleOf(s) }}</div>
+        <div class="body">
+          <div class="head">
+            <div class="title">{{ titleOf(s) }}</div>
+            <div class="num time">{{ relativeTime(s.lastUpdatedAtUtc || s.createdAtUtc) }}</div>
+          </div>
           <div class="sub">{{ subOf(s) }}</div>
         </div>
-        <div class="right">
-          <div class="num">{{ relativeTime(s.lastUpdatedAtUtc || s.createdAtUtc) }}</div>
-          <div class="row" style="gap: 4px; justify-content: flex-end">
-            <button
-              type="button"
-              class="icon-btn danger"
-              aria-label="移除会话"
-              @click="onDismiss($event, s.sessionId)"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M4 7h16" />
-                <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                <path d="M8 7l1 12a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1l1-12" />
-                <path d="M10 11v6M14 11v6" />
-              </svg>
-            </button>
-            <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M9 6l6 6-6 6" />
+        <div class="actions">
+          <button
+            type="button"
+            class="icon-btn danger"
+            aria-label="移除会话"
+            @click="onDismiss($event, s.sessionId)"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h16" />
+              <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+              <path d="M8 7l1 12a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1l1-12" />
+              <path d="M10 11v6M14 11v6" />
             </svg>
-          </div>
+          </button>
+          <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 6l6 6-6 6" />
+          </svg>
         </div>
       </div>
 
