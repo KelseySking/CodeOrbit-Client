@@ -48,7 +48,7 @@ defineEmits<{
       <button
         v-if="showRefresh"
         type="button"
-        class="icon-btn"
+        class="icon-btn icon-btn--sm"
         aria-label="刷新"
         :disabled="props.connectionState === 'connecting'"
         @click="$emit('refresh')"

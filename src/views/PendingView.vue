@@ -161,7 +161,7 @@ function emitDismiss(actionId: string) {
 <template>
   <section class="pad stack" style="gap: 12px">
     <div v-if="connectionState === 'offline'" class="banner">
-      <span>无法访问 Runtime</span>
+      <span>无法访问 CodeOrbit</span>
       <button type="button" @click="$emit('retry')">重试</button>
     </div>
     <div
@@ -345,7 +345,7 @@ function emitDismiss(actionId: string) {
       </div>
       <div class="card soft">
         <p class="h3" style="margin: 0 0 6px">暂不可用</p>
-        <p class="meta" style="margin: 0 0 12px">未连接 Runtime 时无法拉取待处理。</p>
+        <p class="meta" style="margin: 0 0 12px">未连接 CodeOrbit 时无法拉取待处理。</p>
         <button type="button" class="btn-primary" @click="$emit('goConnect')">去连接</button>
       </div>
     </template>

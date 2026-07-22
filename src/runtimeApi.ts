@@ -309,10 +309,72 @@ export function currentQuestion(action: PendingActionDto): QuestionItemDto | Que
 }
 
 export function formatRuntimeError(error: unknown): string {
-  if (error instanceof RuntimeApiError) return error.message;
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string" && error.trim()) return error;
-  return "Runtime request failed.";
+  if (error instanceof RuntimeApiError) {
+    return localizeUserError(error.message, error.status);
+  }
+  if (error instanceof Error) {
+    return localizeUserError(error.message);
+  }
+  if (typeof error === "string" && error.trim()) {
+    return localizeUserError(error);
+  }
+  return "无法连接 CodeOrbit，请检查地址与网络。";
+}
+
+/** Map common English / raw network messages to Chinese UI copy. */
+function localizeUserError(message: string, status?: number): string {
+  const raw = message.trim();
+  if (!raw) return "无法连接 CodeOrbit，请检查地址与网络。";
+
+  const lower = raw.toLowerCase();
+
+  if (
+    lower === "failed to fetch" ||
+    lower.includes("networkerror") ||
+    lower.includes("network request failed") ||
+    lower.includes("load failed") ||
+    lower.includes("err_connection") ||
+    lower.includes("econnrefused") ||
+    lower.includes("econnreset") ||
+    lower.includes("enotfound") ||
+    lower.includes("etimedout") ||
+    lower.includes("timed out") ||
+    lower.includes("timeout") ||
+    lower.includes("connection refused") ||
+    lower.includes("connection reset") ||
+    lower.includes("name or service not known") ||
+    lower.includes("could not connect") ||
+    lower.includes("dns")
+  ) {
+    return "无法访问 CodeOrbit，请检查地址、端口与网络。";
+  }
+
+  if (status === 401 || lower.includes("unauthorized") || lower.includes("invalid token")) {
+    return "Token 无效或已过期，请重新填写。";
+  }
+  if (status === 403 || lower.includes("forbidden")) {
+    return "没有访问权限，请检查 Token。";
+  }
+  if (status === 404) {
+    return "接口不存在，请确认 CodeOrbit 版本与地址。";
+  }
+  if (status !== undefined && status >= 500) {
+    return "CodeOrbit 服务异常，请稍后重试。";
+  }
+
+  // Already Chinese (or mixed UI copy) — keep
+  if (/[一-鿿]/.test(raw)) return raw;
+
+  // Remaining English /api fallbacks from this client
+  if (lower.startsWith("codeorbit /api/") || lower.startsWith("runtime /api/")) {
+    const statusMatch = raw.match(/\b(\d{3})\b/);
+    const code = statusMatch ? Number(statusMatch[1]) : status;
+    if (code === 401) return "Token 无效或已过期，请重新填写。";
+    if (code !== undefined && code >= 500) return "CodeOrbit 服务异常，请稍后重试。";
+    return "请求失败，请稍后重试。";
+  }
+
+  return "连接失败，请稍后重试。";
 }
 
 export function eventRefreshScope(event: HubEventDto): "sessions" | "pending" | "sources" | "assets" | "all" {
@@ -332,19 +394,19 @@ export function eventRefreshScope(event: HubEventDto): "sessions" | "pending" | 
   }
 }
 
-function readResponse<T>(response: RuntimeHttpResponse, path: string): T {
+function readResponse<T>(response: RuntimeHttpResponse, _path: string): T {
   if (response.status < 200 || response.status >= 300) {
-    const fallback = `Runtime /api/${path} failed with ${response.status}.`;
+    const fallback = `HTTP ${response.status}`;
     throw new RuntimeApiError(readErrorMessage(response.body, fallback), response.status);
   }
 
   return JSON.parse(response.body) as T;
 }
 
-async function readFetchResponse<T>(response: Response, path: string): Promise<T> {
+async function readFetchResponse<T>(response: Response, _path: string): Promise<T> {
   const body = await response.text();
   if (!response.ok) {
-    const fallback = `Runtime /api/${path} failed with ${response.status}.`;
+    const fallback = `HTTP ${response.status}`;
     throw new RuntimeApiError(readErrorMessage(body, fallback), response.status);
   }
 

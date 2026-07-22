@@ -113,6 +113,18 @@
   fill: none;
   stroke-width: 1.7;
 }
+/* TopBar refresh — align visual weight with StatusChip (~30px) */
+.icon-btn.icon-btn--sm {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  flex: 0 0 32px;
+}
+.icon-btn.icon-btn--sm svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.8;
+}
 .icon-btn.danger {
   background: var(--danger-soft);
   border-color: color-mix(in srgb, var(--danger) 28%, var(--border));
@@ -426,7 +438,7 @@
 }
 .session-row .head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   min-width: 0;
 }
@@ -467,12 +479,15 @@
   margin: 0;
 }
 
-/* swipe-left delete shell for SessionsView */
+/* swipe-left delete shell for SessionsView — border lives on shell so edges stay intact */
 .session-swipe {
   position: relative;
   border-radius: var(--radius-card);
+  border: 1px solid var(--border);
+  background: var(--surface);
   overflow: hidden;
   touch-action: pan-y;
+  box-shadow: 0 1px 0 rgba(44, 36, 22, 0.02);
 }
 .session-swipe-delete {
   position: absolute;
@@ -489,6 +504,7 @@
   display: grid;
   place-items: center;
   z-index: 0;
+  border-radius: 0;
 }
 .session-swipe-front {
   position: relative;
@@ -497,6 +513,10 @@
   will-change: transform;
   touch-action: pan-y;
   background: var(--surface);
+  /* shell owns border/radius — front is content only */
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
 }
 .session-swipe-front.is-swiping {
   transition: none;

@@ -210,7 +210,7 @@ function onTouchCancel(id: string) {
           </svg>
         </div>
         <h2 class="h2">暂无会话</h2>
-        <p>连接 Runtime 后，Agent 会话会出现在这里。</p>
+        <p>连接 CodeOrbit 后，Agent 会话会出现在这里。</p>
       </div>
       <button type="button" class="btn-primary" @click="$emit('goConnect')">去连接</button>
     </template>

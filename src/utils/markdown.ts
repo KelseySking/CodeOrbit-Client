@@ -5,7 +5,7 @@ const md = new Marked({
   breaks: true,
 });
 
-// Runtime chat is semi-trusted (own machine) but still strip raw HTML tags.
+// CodeOrbit chat is semi-trusted (own machine) but still strip raw HTML tags.
 md.use({
   renderer: {
     html({ text }) {

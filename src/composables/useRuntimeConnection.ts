@@ -385,7 +385,7 @@ export function useRuntimeConnection() {
     const baseUrl = normalizeBaseUrl(input.baseUrl);
     const token = input.token.trim();
 
-    if (!baseUrl) throw new Error("Runtime 地址不能为空");
+    if (!baseUrl) throw new Error("CodeOrbit 地址不能为空");
     if (!input.id && !token) throw new Error("Token 不能为空");
 
     loading.value = true;

@@ -88,6 +88,22 @@ const showPendingBadge = computed(
   () => isConnected.value && pendingCount.value > 0,
 );
 
+/** sessionId → pending count (detail banner only; list has no pending badge) */
+const pendingBySession = computed(() => {
+  const map: Record<string, number> = {};
+  for (const action of pending.value) {
+    const id = (action.sessionId || "").trim();
+    if (!id) continue;
+    map[id] = (map[id] ?? 0) + 1;
+  }
+  return map;
+});
+
+const stackPendingCount = computed(() => {
+  if (stack.value?.type !== "session") return 0;
+  return pendingBySession.value[stack.value.id] ?? 0;
+});
+
 const chromeTitle = computed(() => {
   if (stack.value?.type === "session") return stack.value.title;
   return titles[activeTab.value];
@@ -521,7 +537,6 @@ function onPresenceCancelled(el: Element) {
             :active-target="activeTarget"
             :health="health"
             :version="version"
-            :error-message="errorMessage"
             @save-connect="onSaveConnect"
             @connect-existing="onConnectExisting"
             @delete-target="requestDeleteTarget"
@@ -549,6 +564,8 @@ function onPresenceCancelled(el: Element) {
             :title="stack.title"
             :client="client"
             :reload-token="sessionsEpoch"
+            :pending-count="stackPendingCount"
+            @go-pending="goPending"
           />
         </div>
       </Transition>

@@ -2,8 +2,11 @@
 import { onMounted, ref, watch } from "vue";
 import type { ConnectionState } from "../shell/StatusChip.vue";
 import type { ApiHealthDto, ApiVersionDto } from "../runtimeApi";
-import type { RuntimeTarget } from "../targetStore";
-import { normalizeBaseUrl } from "../targetStore";
+import {
+  getRuntimeTargetToken,
+  normalizeBaseUrl,
+  type RuntimeTarget,
+} from "../targetStore";
 
 const props = defineProps<{
   connectionState: ConnectionState;
@@ -13,7 +16,6 @@ const props = defineProps<{
   activeTarget: RuntimeTarget | null;
   health: ApiHealthDto | null;
   version: ApiVersionDto | null;
-  errorMessage: string;
 }>();
 
 const emit = defineEmits<{
@@ -33,6 +35,9 @@ const showToken = ref(false);
 const detailsOpen = ref(false);
 const errUrl = ref("");
 const errToken = ref("");
+/** load stored token into the form when selecting a saved target */
+const formTokenLoading = ref(false);
+const formTokenHint = ref("");
 
 // reconnect / disconnect → collapse details (default closed)
 watch(
@@ -42,18 +47,36 @@ watch(
   },
 );
 
+async function loadFormToken(id: string) {
+  formTokenLoading.value = true;
+  formTokenHint.value = "";
+  try {
+    const t = (await getRuntimeTargetToken(id)).trim();
+    token.value = t;
+    formTokenHint.value = t ? "" : "未保存 Token，请填写";
+  } catch {
+    token.value = "";
+    formTokenHint.value = "无法读取已存 Token";
+  } finally {
+    formTokenLoading.value = false;
+  }
+}
+
 function applyTarget(target: RuntimeTarget | null) {
   if (!target) {
     formId.value = "";
     name.value = "家里电脑";
     url.value = "http://127.0.0.1:32145";
     token.value = "";
+    formTokenHint.value = "";
+    formTokenLoading.value = false;
     return;
   }
   formId.value = target.id;
   name.value = target.name;
   url.value = target.baseUrl;
   token.value = "";
+  void loadFormToken(target.id);
 }
 
 onMounted(() => {
@@ -86,21 +109,27 @@ function validate(requireToken: boolean): boolean {
   const t = token.value.trim();
   if (!u) {
     ok = false;
-    errUrl.value = "请填写 Runtime 地址";
+    errUrl.value = "请填写 CodeOrbit 地址";
   } else if (!/^https?:\/\//i.test(u)) {
     ok = false;
     errUrl.value = "地址需以 http:// 或 https:// 开头";
   }
   if (requireToken && !t) {
     ok = false;
-    errToken.value = formId.value ? "更新 Token 或使用「连接」读取已存 Token" : "请填写 Token";
+    errToken.value = formId.value ? "请填写或更新 Token" : "请填写 Token";
   }
   return ok;
 }
 
 function onSaveConnect() {
-  // new target needs token; existing may omit token (keep stored)
-  if (!validate(!formId.value)) return;
+  // new target needs token; existing may omit if we still have value loaded
+  if (!validate(!formId.value && !token.value.trim())) return;
+  // editing existing: empty token after load means user cleared — still send what they typed
+  if (!validate(false)) return;
+  if (!formId.value && !token.value.trim()) {
+    errToken.value = "请填写 Token";
+    return;
+  }
   emit("saveConnect", {
     id: formId.value || undefined,
     name: name.value,
@@ -129,25 +158,9 @@ function removeSelected() {
 
 <template>
   <section class="pad stack" style="gap: 14px">
-    <div
-      v-if="errorMessage && connectionState !== 'connected'"
-      class="banner"
-      :style="
-        connectionState === 'unauthorized'
-          ? {
-              background: 'var(--danger-soft)',
-              borderColor: 'color-mix(in srgb, var(--danger) 28%, var(--border))',
-              color: 'var(--danger)',
-            }
-          : undefined
-      "
-    >
-      <span>{{ errorMessage }}</span>
-    </div>
-
     <template v-if="connectionState === 'connected' && activeTarget">
-      <div class="card soft">
-        <div class="row-between" style="align-items: flex-start">
+      <div class="card soft conn-card">
+        <div class="row-between conn-head">
           <button
             type="button"
             class="conn-title"
@@ -180,12 +193,20 @@ function removeSelected() {
           </button>
           <button type="button" class="btn-text" @click="$emit('disconnect')">断开</button>
         </div>
-        <div v-show="detailsOpen" id="conn-details" class="conn-details">
-          <p class="meta num" style="margin: 0">{{ activeTarget.baseUrl }}</p>
-          <p v-if="version" class="meta" style="margin: 6px 0 0">
-            {{ version.product }} {{ version.version }}
-            <template v-if="health"> · {{ health.status }}</template>
-          </p>
+        <div
+          id="conn-details"
+          class="conn-collapse"
+          :class="{ open: detailsOpen }"
+        >
+          <div class="conn-collapse-inner">
+            <div class="conn-details">
+              <p class="meta num" style="margin: 0">{{ activeTarget.baseUrl }}</p>
+              <p v-if="version" class="meta" style="margin: 6px 0 0">
+                {{ version.product }} {{ version.version }}
+                <template v-if="health"> · {{ health.status }}</template>
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -209,7 +230,7 @@ function removeSelected() {
 
     <template v-else>
       <div class="card soft">
-        <p class="h3" style="margin: 0 0 6px">连接到电脑上的 Runtime</p>
+        <p class="h3" style="margin: 0 0 6px">连接到电脑上的 CodeOrbit</p>
         <p class="meta" style="margin: 0">
           在手机上查看 AI 编程会话、处理权限审批与提问。Token 仅保存在本机。
         </p>
@@ -265,7 +286,7 @@ function removeSelected() {
           </div>
         </div>
         <div class="field">
-          <label for="runtime-url">Runtime 地址</label>
+          <label for="runtime-url">CodeOrbit 地址</label>
           <div class="control">
             <input
               id="runtime-url"
@@ -279,13 +300,18 @@ function removeSelected() {
           <div class="field-error" role="alert">{{ errUrl }}</div>
         </div>
         <div class="field">
-          <label for="runtime-token">Token{{ formId ? "（留空则用已存）" : "" }}</label>
+          <label for="runtime-token">
+            Token
+            <template v-if="formId && formTokenLoading">（读取中…）</template>
+            <template v-else-if="formId && token">（已存，可改）</template>
+            <template v-else-if="formId">（需填写）</template>
+          </label>
           <div class="control">
             <input
               id="runtime-token"
               v-model="token"
               :type="showToken ? 'text' : 'password'"
-              placeholder="粘贴访问 Token"
+              :placeholder="formTokenLoading ? '读取已存 Token…' : '粘贴访问 Token'"
               style="padding-right: 48px"
               :class="{ invalid: !!errToken }"
               autocomplete="off"
@@ -313,6 +339,9 @@ function removeSelected() {
               </svg>
             </button>
           </div>
+          <div v-if="formTokenHint && !errToken" class="meta" style="margin-top: 4px">
+            {{ formTokenHint }}
+          </div>
           <div class="field-error" role="alert">{{ errToken }}</div>
         </div>
         <div class="form-actions">
@@ -320,7 +349,7 @@ function removeSelected() {
             type="submit"
             class="btn-primary"
             :class="{ 'is-loading': loading || connectionState === 'connecting' }"
-            :disabled="loading || connectionState === 'connecting'"
+            :disabled="loading || connectionState === 'connecting' || formTokenLoading"
           >
             {{
               loading || connectionState === "connecting" ? "连接中…" : "保存并连接"
@@ -345,7 +374,7 @@ function removeSelected() {
       </form>
 
       <p class="hint">
-        Token 仅保存在本机（系统凭据库，不可用时回退应用私有目录），请勿把 Runtime
+        Token 仅保存在本机（系统凭据库，不可用时回退应用私有目录），请勿把 CodeOrbit
         直接暴露到公网。当前地址将规范为
         {{ url.trim() ? normalizeBaseUrl(url) : "—" }}。
       </p>
@@ -370,6 +399,9 @@ function removeSelected() {
   opacity: 0.45;
   pointer-events: none;
 }
+.conn-head {
+  align-items: center;
+}
 .conn-title {
   border: 0;
   background: transparent;
@@ -388,13 +420,39 @@ function removeSelected() {
   fill: none;
   stroke-width: 1.8;
   flex-shrink: 0;
-  transition: transform var(--motion-duration-fast, 180ms) ease;
+  transition: transform var(--motion-duration-fast, 180ms) var(--motion-ease, ease);
 }
 .conn-chev.open {
   transform: rotate(180deg);
 }
+.conn-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    grid-template-rows var(--motion-duration-fast, 180ms) var(--motion-ease, ease),
+    opacity var(--motion-duration-fast, 180ms) var(--motion-ease, ease);
+}
+.conn-collapse.open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  pointer-events: auto;
+}
+.conn-collapse-inner {
+  overflow: hidden;
+  min-height: 0;
+}
 .conn-details {
   margin-top: 10px;
   padding-top: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .conn-collapse {
+    transition: none;
+  }
+  .conn-chev {
+    transition: none;
+  }
 }
 </style>

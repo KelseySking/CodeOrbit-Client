@@ -15,6 +15,12 @@ const props = defineProps<{
   client: SessionClient | null;
   /** parent bumps on WS session refresh / manual probe */
   reloadToken?: number;
+  /** pending actions linked to this session */
+  pendingCount?: number;
+}>();
+
+const emit = defineEmits<{
+  goPending: [];
 }>();
 
 const messages = ref<ChatMessageDto[]>([]);
@@ -160,7 +166,19 @@ watch(
 </script>
 
 <template>
-  <section ref="streamEl" class="msg-stream" @scroll.passive="onScroll">
+  <div class="detail-root">
+    <div v-if="(pendingCount ?? 0) > 0" class="pending-banner pad">
+      <div class="pending-banner-inner">
+        <div>
+          <p class="h3" style="margin: 0 0 2px">
+            本会话有 {{ pendingCount }} 条待处理
+          </p>
+          <p class="meta" style="margin: 0">权限审批或提问等待确认</p>
+        </div>
+        <button type="button" class="btn-text" @click="emit('goPending')">去处理</button>
+      </div>
+    </div>
+    <section ref="streamEl" class="msg-stream" @scroll.passive="onScroll">
     <div v-if="loading && !messages.length" class="meta" style="padding: 12px 16px">
       加载消息…
     </div>
@@ -184,13 +202,36 @@ watch(
       <h2 class="h2">暂无消息</h2>
       <p class="meta">该会话还没有可展示的消息。</p>
     </div>
-  </section>
+    </section>
+  </div>
 </template>
 
 <style scoped>
-.msg-stream {
+.detail-root {
   flex: 1 1 auto;
+  min-height: 0;
   height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.pending-banner {
+  flex: 0 0 auto;
+  padding-top: 8px;
+  padding-bottom: 4px;
+}
+.pending-banner-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-card);
+  border: 1px solid color-mix(in srgb, var(--warn) 28%, var(--border));
+  background: color-mix(in srgb, var(--warn) 10%, var(--surface));
+}
+.msg-stream {
+  /* flex child owns scroll; avoid height:100% so pending banner does not force overflow */
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
