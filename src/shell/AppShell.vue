@@ -43,6 +43,7 @@ const {
   removeTarget,
   disconnect,
   refresh,
+  resumeRealtime,
 } = useRuntimeConnection();
 
 const activeTab = ref<TabId>("connect");
@@ -166,10 +167,31 @@ function onPopState() {
   }, EXIT_HINT_MS);
 }
 
+/** debounce visibility/online → resumeRealtime (400ms) */
+let resumeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleResume() {
+  if (resumeDebounceTimer) clearTimeout(resumeDebounceTimer);
+  resumeDebounceTimer = setTimeout(() => {
+    resumeDebounceTimer = null;
+    void resumeRealtime();
+  }, 400);
+}
+
+function onVisibility() {
+  if (document.visibilityState === "visible") scheduleResume();
+}
+
+function onOnline() {
+  scheduleResume();
+}
+
 onMounted(async () => {
   // Keep one history entry under tabs so root back is interceptable.
   pushRootGuard();
   window.addEventListener("popstate", onPopState);
+  document.addEventListener("visibilitychange", onVisibility);
+  window.addEventListener("online", onOnline);
   try {
     await loadTargets();
     if (targets.value.length === 0) activeTab.value = "connect";
@@ -180,6 +202,12 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener("popstate", onPopState);
+  document.removeEventListener("visibilitychange", onVisibility);
+  window.removeEventListener("online", onOnline);
+  if (resumeDebounceTimer) {
+    clearTimeout(resumeDebounceTimer);
+    resumeDebounceTimer = null;
+  }
   if (exitHintTimer) {
     clearTimeout(exitHintTimer);
     exitHintTimer = null;

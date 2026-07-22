@@ -71,6 +71,8 @@ export function useRuntimeConnection() {
   /** R7: first pending snapshot after connect is baseline only */
   let pendingBaselineReady = false;
   let knownPendingIds = new Set<string>();
+  /** shared in-flight for visibility/online resume (no request storms) */
+  let resumeInflight: Promise<void> | null = null;
 
   const isConnected = computed(() => connectionState.value === "connected");
 
@@ -450,6 +452,51 @@ export function useRuntimeConnection() {
     }
   }
 
+  function isWsHealthy(): boolean {
+    return (
+      socket != null &&
+      socket.readyState === WebSocket.OPEN &&
+      wsState.value === "open"
+    );
+  }
+
+  /** 回前台 / 网络恢复：探活 WS + 刷新 pending/sessions。未连接 no-op。 */
+  async function resumeRealtime(): Promise<void> {
+    if (resumeInflight) return resumeInflight;
+
+    if (connectionState.value !== "connected" || !client.value) {
+      return;
+    }
+
+    // Capture only — do not bump requestId (must not cancel in-flight connect).
+    const rid = requestId;
+
+    resumeInflight = (async () => {
+      const api = client.value;
+      if (!api || connectionState.value !== "connected" || rid !== requestId) {
+        return;
+      }
+
+      if (!isWsHealthy()) {
+        startEvents(api);
+      }
+
+      // Disconnect / reconnect may have raced after startEvents.
+      if (connectionState.value !== "connected" || rid !== requestId) return;
+
+      await Promise.all([
+        loadPending(api).catch(() => undefined),
+        loadSessions(api).catch(() => undefined),
+      ]);
+    })();
+
+    try {
+      await resumeInflight;
+    } finally {
+      resumeInflight = null;
+    }
+  }
+
   return {
     targets,
     activeTarget,
@@ -474,5 +521,6 @@ export function useRuntimeConnection() {
     removeTarget,
     disconnect,
     refresh,
+    resumeRealtime,
   };
 }
